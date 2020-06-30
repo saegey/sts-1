@@ -1,0 +1,499 @@
+service: strava-activities-ingest
+
+provider:
+  name: aws
+  runtime: python3.8
+  stage: ${opt:stage, 'dev'}
+  tracing:
+    lambda: true
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - sqs:SendMessage
+      Resource:
+        - { "Fn::GetAtt": ["backfillAthleteQueue", "Arn"] }
+        - { "Fn::GetAtt": ["peaksS3ToDynamoQueue", "Arn"] }
+        - { "Fn::GetAtt": ["stravaApiQueue", "Arn"] }
+
+    - Effect: Allow
+      Action:
+        - ssm:GetParameter
+      Resource:
+        - arn:aws:ssm:us-east-1:373376418880:parameter/STRAVA_CLIENT_ID
+        - arn:aws:ssm:us-east-1:373376418880:parameter/STRAVA_CLIENT_SECRET
+
+    - Effect: Allow
+      Action:
+        - s3:PutObject
+        - s3:PutObjectAcl
+        - s3:GetObject
+      Resource:
+        - { "Fn::GetAtt": ["stravaAthleteDataBucket", "Arn"] }
+        - {
+            "Fn::Join":
+              [
+                "/",
+                [{ "Fn::GetAtt": ["stravaAthleteDataBucket", "Arn"] }, "*"],
+              ],
+          }
+
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+      Resource:
+        # TODO - lookup if this is the correct way to handle resources
+        - { "Fn::GetAtt": ["ActivitiesDynamoDBTable", "Arn"] }
+        - { "Fn::GetAtt": ["PeaksDynamoDBTable", "Arn"] }
+        - { "Fn::GetAtt": ["StravaAuthDynamoDBTable", "Arn"] }
+
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+      Resource:
+        - {
+            "Fn::Join":
+              [
+                "/",
+                [
+                  { "Fn::GetAtt": ["PeaksDynamoDBTable", "Arn"] },
+                  "index",
+                  "peaks_type",
+                ],
+              ],
+          }
+    # - Effect: Allow
+    #   Action:
+    #     - SNS:Publish
+    #   Resource:
+    #     - { "Ref": snsDeadLetterQueue" }
+
+  environment:
+    ACTIVITIES_TABLE: ${self:custom.activitiesTable}
+    PEAKS_TABLE: ${self:custom.peaksTable}
+    STRAVA_AUTH_TABLE: ${self:custom.stravaAuthTable}
+    DOMAIN_SUFFIX: ${self:custom.cognitoDomainSuffix}
+    USER_POOL: ${self:custom.userPoolName}
+    STRAVA_CLIENT_ID: ${self:custom.stravaClientId}
+    COGNITO_LOGIN_URL: ${self:custom.${self:custom.stage}.cognitoLoginUrl}
+    COGNITO_URL: ${self:custom.${self:custom.stage}.cognitoUrl}
+    URL: ${self:custom.${self:custom.stage}.callbackUrl}
+    USER_POOL_ID: ${opt:poolid, self:custom.userPoolId}
+    USER_POOL_CLIENT_ID: ${opt:clientid, self:custom.userPoolClientId}
+    STAGE: ${self:custom.stage}
+    SQS_QUEUE_URL: { "Ref": "backfillAthleteQueue" }
+    STRAVA_API_QUEUE_URL: { "Ref": "stravaApiQueue" }
+    BUCKET: { "Fn::GetAtt": ["stravaAthleteDataBucket", "DomainName"] }
+
+  package:
+    excludeDevDependencies: true
+    exclude:
+      - .git/**
+      - .vscode/**
+      - venv/**
+      - node_modules/**
+
+functions:
+  # APIS
+  backfillAthleteEndpoint:
+    handler: index.backfill_athlete
+    # layers:
+    #   - { Ref: PythonRequirementsLambdaLayer }
+    events:
+      - http:
+          path: /api/athlete/backfill
+          method: get
+          authorizer: auth
+          cors: true
+
+  stravaAuthorized:
+    handler: index.strava_authorized
+    # layers:
+    #   - { Ref: PythonRequirementsLambdaLayer }
+    events:
+      - http:
+          path: /strava-authorized
+          method: post
+          authorizer: auth
+          cors: true
+
+  stravaCallback:
+    # layers:
+    #   - { Ref: PythonRequirementsLambdaLayer }
+    handler: index.strava_callback
+    events:
+      - http:
+          path: /strava-callback
+          method: get
+
+  stravaAuth:
+    # layers:
+    #   - { Ref: PythonRequirementsLambdaLayer }
+    handler: index.strava_auth
+    events:
+      - http:
+          path: /strava-auth
+          method: get
+
+  logout:
+    # layers:
+    #   - { Ref: PythonRequirementsLambdaLayer }
+    handler: index.logout
+    events:
+      - http:
+          path: /logout
+          method: get
+
+  graph:
+    # layers:
+    #   - { Ref: PythonRequirementsLambdaLayer }
+    handler: graph.main
+    events:
+      - http:
+          path: /api/graph
+          method: get
+          authorizer: auth
+          cors: true
+
+  index:
+    # layers:
+    #   - { Ref: PythonRequirementsLambdaLayer }
+    handler: index.main
+    events:
+      - http:
+          path: /
+          method: get
+
+  profile:
+    # layers:
+    #   - { Ref: PythonRequirementsLambdaLayer }
+    handler: index.profile
+    events:
+      - http:
+          path: /profile
+          method: get
+          authorizer: auth
+          cors: true
+
+  athlete:
+    # layers:
+    #   - { Ref: PythonRequirementsLambdaLayer }
+    handler: athlete.main
+    events:
+      - http:
+          path: /athlete
+          method: get
+
+  # Authorization
+  auth:
+    # layers:
+    #   - { Ref: PythonRequirementsLambdaLayer }
+    handler: auth.main
+    cors: true
+
+  # Background Jobs
+  enqueueStravaBackfill:
+    # layers:
+    #   - { Ref: PythonRequirementsLambdaLayer }
+    handler: ingest_strava.enqueue_strava_backfill
+    timeout: 300
+    events:
+      - sqs:
+          arn: { "Fn::GetAtt": ["backfillAthleteQueue", "Arn"] }
+    # onError: { "Ref": "snsDeadLetterQueue" }
+
+  # snsRetryStravaApi:
+  #   # layers:
+  #   #   - { Ref: PythonRequirementsLambdaLayer }
+  #   handler: ingest_strava.
+
+  fetchStravaApi:
+    # layers:
+    #   - { Ref: PythonRequirementsLambdaLayer }
+    handler: ingest_strava.fetch_strava_api
+    reservedConcurrency: 1
+    timeout: 300
+    events:
+      - sqs:
+          arn: { "Fn::GetAtt": ["stravaApiQueue", "Arn"] }
+          batchSize: 1
+    # onError: { "Ref": "snsDeadLetterQueue" }
+
+  processStravaStreamsFromS3:
+    # layers:
+    #   - { Ref: PythonRequirementsLambdaLayer }
+    reservedConcurrency: 1
+    handler: process_streams.main
+    timeout: 300
+    # environment:
+    #   BUCKET: { "Fn::GetAtt": ["stravaAthleteDataBucket", "DomainName"] }
+    # onError: { "Ref": "snsDeadLetterQueue" }
+    events:
+      - sqs:
+          arn: { "Fn::GetAtt": ["peaksS3ToDynamoQueue", "Arn"] }
+
+resources:
+  Resources:
+    # snsDeadLetterQueue:
+    #   Type: AWS::SNS::Topic
+    #   Properties:
+    #     TopicName: ${self:custom.servicePrefix}-dead-letter-${opt:stage, self:provider.stage}
+
+    peaksS3ToDynamoQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.servicePrefix}-peaks-S3-to-dynamo-${opt:stage, self:provider.stage}
+        # RedrivePolicy:
+        #   deadLetterTargetArn: !GetAtt snsDeadLetterQueue.Arn
+        #   maxReceiveCount: 10
+        VisibilityTimeout: 300
+        DelaySeconds: 0
+        MaximumMessageSize: 262144
+        MessageRetentionPeriod: 864000
+        ReceiveMessageWaitTimeSeconds: 0
+
+    backfillAthleteQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.servicePrefix}-backfill-athlete-${opt:stage, self:provider.stage}
+        VisibilityTimeout: 300
+
+    stravaApiQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.servicePrefix}-strava-api-${opt:stage, self:provider.stage}.fifo
+        ContentBasedDeduplication: true
+        VisibilityTimeout: 600
+        FifoQueue: true
+
+    QueuePolicy:
+      Type: AWS::SQS::QueuePolicy
+      DependsOn:
+        - peaksS3ToDynamoQueue
+      Properties:
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                AWS: "*"
+              Action:
+                - SQS:SendMessage
+              # Target a wildcard resource name based on the same format as QueueName
+              Resource:
+                !Join [
+                  "",
+                  [
+                    "arn:aws:sqs:*:*:",
+                    "${self:custom.servicePrefix}-peaks-S3-to-dynamo-${opt:stage, self:provider.stage}",
+                  ],
+                ]
+              Condition:
+                ArnLike:
+                  aws:SourceArn:
+                    !Join [
+                      "",
+                      [
+                        "arn:aws:s3:*:*:",
+                        "${self:custom.servicePrefix}-strava-athlete-${opt:stage, self:provider.stage}",
+                      ],
+                    ]
+        Queues:
+          - !Ref peaksS3ToDynamoQueue
+
+    stravaAthleteDataBucket:
+      Type: AWS::S3::Bucket
+      DependsOn:
+        - peaksS3ToDynamoQueue
+      Properties:
+        BucketName: ${self:custom.servicePrefix}-strava-athlete-${opt:stage, self:provider.stage}
+        NotificationConfiguration:
+          QueueConfigurations:
+            - Event: s3:ObjectCreated:*
+              Queue: { "Fn::GetAtt": ["peaksS3ToDynamoQueue", "Arn"] }
+              Filter:
+                S3Key:
+                  Rules:
+                    - Name: prefix
+                      Value: streams_
+
+    serviceUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: ${self:custom.userPoolName}
+        UsernameAttributes:
+          - email
+        AutoVerifiedAttributes:
+          - email
+
+    serviceUserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: service-user-pool-client-${opt:stage, self:provider.stage}
+        AllowedOAuthFlows:
+          - implicit
+        AllowedOAuthFlowsUserPoolClient: true
+        AllowedOAuthScopes:
+          - phone
+          - email
+          - openid
+          - profile
+          - aws.cognito.signin.user.admin
+        UserPoolId:
+          Ref: serviceUserPool
+        CallbackURLs:
+          - https://localhost:3000
+        ExplicitAuthFlows:
+          - ALLOW_USER_SRP_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+        GenerateSecret: false
+        SupportedIdentityProviders:
+          - COGNITO
+
+    serviceUserPoolDomain:
+      Type: AWS::Cognito::UserPoolDomain
+      Properties:
+        UserPoolId:
+          Ref: serviceUserPool
+        Domain: service-user-pool-domain-${opt:stage, self:provider.stage}-${self:provider.environment.DOMAIN_SUFFIX}
+
+    ActivitiesDynamoDBTable:
+      Type: "AWS::DynamoDB::Table"
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: athlete_id
+            AttributeType: S
+          - AttributeName: activity_id
+            AttributeType: S
+
+        KeySchema:
+          - AttributeName: athlete_id
+            KeyType: HASH
+          - AttributeName: activity_id
+            KeyType: RANGE
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:custom.activitiesTable}
+
+    PeaksDynamoDBTable:
+      Type: "AWS::DynamoDB::Table"
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: athlete_id
+            AttributeType: S
+          - AttributeName: peak_id
+            AttributeType: S
+          - AttributeName: peak_type
+            AttributeType: S
+        KeySchema:
+          - AttributeName: athlete_id
+            KeyType: HASH
+          - AttributeName: peak_id
+            KeyType: RANGE
+        ProvisionedThroughput:
+          ReadCapacityUnits: 2
+          WriteCapacityUnits: 2
+        TableName: ${self:custom.peaksTable}
+        GlobalSecondaryIndexes:
+          - IndexName: peaks_type
+            KeySchema:
+              - AttributeName: athlete_id
+                KeyType: HASH
+              - AttributeName: peak_type
+                KeyType: RANGE
+            Projection:
+              NonKeyAttributes:
+                - start_date_local
+                - name
+                - activity_id
+                - value
+              ProjectionType: INCLUDE
+            ProvisionedThroughput:
+              ReadCapacityUnits: 2
+              WriteCapacityUnits: 2
+
+    StravaAuthDynamoDBTable:
+      Type: "AWS::DynamoDB::Table"
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: user_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: user_id
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:custom.stravaAuthTable}
+
+  Outputs:
+    UserPoolId:
+      Value:
+        Ref: serviceUserPool
+      Export:
+        Name: ${self:provider.stage}-UserPoolId
+
+    UserPoolClientId:
+      Value:
+        Ref: serviceUserPoolClient
+      Export:
+        Name: ${self:provider.stage}-UserPoolClientId
+
+plugins:
+  - serverless-python-requirements
+  - serverless-offline
+  - serverless-domain-manager
+
+custom:
+  customDomain:
+    domainName: sts-1.com
+    basePath: ''
+    stage: prod
+    createRoute53Record: true
+  pythonRequirements:
+    # layer: true
+    dockerizePip: non-linux
+    # zip: true
+    # slim: true
+  userPoolId: { Ref: serviceUserPool }
+  servicePrefix: sts1
+  userPoolClientId: { Ref: serviceUserPoolClient }
+  activitiesTable: "${self:custom.servicePrefix}-activities-${self:provider.stage}"
+  peaksTable: "${self:custom.servicePrefix}-peaks-${self:provider.stage}"
+  stravaAuthTable: "${self:custom.servicePrefix}-strava-auth-${self:provider.stage}"
+  stage: "${opt:stage, self:provider.stage}"
+  userPoolPrefix: service-user-pool
+  userPoolName: ${self:custom.userPoolPrefix}-${opt:stage, self:provider.stage}
+  region: us-east-1
+  stravaClientId: m7ci5ov0flhjlc8k4urqdknsp
+  cognitoDomainSuffix: strava-peaks
+  prod:
+    callbackUrl: https://sts-1.com
+    cognitoLoginUrl: "https://login.sts-1.com/login"
+    cognitoUrl: "https://login.sts-1.com"
+
+  qa:
+    callbackUrl:
+      {
+        "Fn::Join":
+          [
+            "",
+            [
+              "https://",
+              { "Ref": "ApiGatewayRestApi" },
+              ".execute-api.${self:custom.region}.amazonaws.com/${self:custom.stage}/",
+            ],
+          ],
+      }
+    cognitoLoginUrl: "https://${self:custom.userPoolPrefix}-domain-${opt:stage, self:provider.stage}-${self:custom.cognitoDomainSuffix}.auth.${self:custom.region}.amazoncognito.com/login"
+    cognitoUrl: "https://${self:custom.userPoolPrefix}-domain-${opt:stage, self:provider.stage}-${self:custom.cognitoDomainSuffix}.auth.${self:custom.region}.amazoncognito.com"
+
+  dev:
+    callbackUrl: http://localhost:3000/dev
+    cognitoLoginUrl: "https://${self:custom.userPoolPrefix}-domain-${opt:stage, self:provider.stage}-${self:custom.cognitoDomainSuffix}.auth.${self:custom.region}.amazoncognito.com/login"
+    cognitoUrl: "https://${self:custom.userPoolPrefix}-domain-${opt:stage, self:provider.stage}-${self:custom.cognitoDomainSuffix}.auth.${self:custom.region}.amazoncognito.com"

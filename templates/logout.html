@@ -1,0 +1,7 @@
+{% set onload = "" %} {% extends '_template.html' %} {% block content %}
+<h1>LOGOUT</h1>
+<script>
+  localStorage.removeItem("Authorization");
+  window.location.href = CALLBACK_URL;
+</script>
+{% endblock %}
