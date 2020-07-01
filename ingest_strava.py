@@ -1,20 +1,15 @@
 import boto3
 import os
-import yaml
 import io
-from stravalib.client import Client
+from stravalib.client import Client as StravaClient
 import requests
 from datetime import datetime, timedelta
 import json
 import time
 from pprint import pprint
 from ratelimiter import RateLimiter
+from config import Config
 
-STRAVA_AUTH_TABLE_NAME = os.environ["STRAVA_AUTH_TABLE"]
-STRAVA_API_QUEUE_URL = os.environ["STRAVA_API_QUEUE_URL"]
-PEAKS_TABLE = os.environ["PEAKS_TABLE"]
-STRAVA_V3_URI = "https://www.strava.com/api/v3"
-S3_BUCKET = os.getenv("BUCKET").split(".")[0]
 STREAM_TYPES = [
     "time",
     "distance",
@@ -25,31 +20,21 @@ STREAM_TYPES = [
     "heartrate",
     "watts",
 ]
+strava_client = StravaClient()
+config = Config()
 
 s3_client = boto3.client("s3")
 ssm_client = boto3.client("ssm")
 sqs = boto3.client("sqs")
 dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
-strava_auth_table = dynamodb.Table(STRAVA_AUTH_TABLE_NAME)
-
-strava_client = Client()
-
-
-def get_secret(key):
-    resp = ssm_client.get_parameter(Name=key, WithDecryption=True)
-    return resp["Parameter"]["Value"]
-
-
-client_id = get_secret("STRAVA_CLIENT_ID")
-client_secret = get_secret("STRAVA_CLIENT_SECRET")
-
+strava_auth_table = dynamodb.Table(config.strava_auth_table)
 
 def new_token(athlete_id, refresh_token):
     raw_res = requests.post(
-        "{url}/oauth/token".format(url=STRAVA_V3_URI),
+        "{url}/oauth/token".format(url=config.strava_api_uri),
         data={
-            "client_id": client_id,
-            "client_secret": client_secret,
+            "client_id": config.strava_client_id,
+            "client_secret": config.strava_client_secret,
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
         },
@@ -72,14 +57,14 @@ def get_and_save_strava_activity(strava_client, athlete_id, user_id, before, aft
         )
         s3_client.put_object(
             Body=json.dumps(activity.to_dict(), sort_keys=True, default=str),
-            Bucket=S3_BUCKET,
+            Bucket=config.strava_api_s3_bucket,
             Key=activity_filename,
         )
         print('saving activity to {bucket}:{key}'.format(
-            bucket=S3_BUCKET, key=activity_filename))
+            bucket=config.strava_api_s3_bucket, key=activity_filename))
 
         response = sqs.send_message(
-            QueueUrl=STRAVA_API_QUEUE_URL,
+            QueueUrl=config.strava_api_queue_url,
             DelaySeconds=0,
             MessageAttributes={
                 "Job": {"DataType": "String", "StringValue": "FETCH_STRAVA_STREAM"},
@@ -114,11 +99,11 @@ def get_and_save_strava_streams(strava_client, activity_id, athlete_id):
 
     s3_client.put_object(
         Body=json.dumps(formatted_streams, default=str),
-        Bucket=S3_BUCKET,
+        Bucket=config.strava_api_s3_bucket,
         Key=streams_filename,
     )
     print('saving streams to {bucket}:{key}'.format(
-        bucket=S3_BUCKET, key=streams_filename))
+        bucket=config.strava_api_s3_bucket, key=streams_filename))
     return True
 
 
@@ -139,6 +124,11 @@ def strava_api_call(job_type, message_attribs, athlete_id, user_id):
         activity_id = message_attribs['ActivityId']['stringValue']
         get_and_save_strava_streams(
             strava_client=strava_client, athlete_id=athlete_id, activity_id=activity_id)
+
+
+def enqueue_strava_athlete_sync(event, context):
+    print(event, config)
+    return True
 
 
 def sns_retry_strava_api(event, context):
@@ -185,8 +175,6 @@ def athlete_access_token(user_id):
         access_token = res["Item"]['access_token']
 
     return access_token
-
-def enqueue_new_strava_activities(event, context):
 
 
 def enqueue_strava_backfill(event, context):

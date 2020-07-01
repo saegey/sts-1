@@ -91,6 +91,7 @@ provider:
 
   package:
     excludeDevDependencies: true
+    individually: true
     exclude:
       - .git/**
       - .vscode/**
@@ -206,6 +207,9 @@ functions:
           arn: { "Fn::GetAtt": ["backfillAthleteQueue", "Arn"] }
     # onError: { "Ref": "snsDeadLetterQueue" }
 
+  enqueueStravaAthleteSync:
+    handler: ingest_strava.enqueue_strava_athlete_sync
+    timeout: 300
   # snsRetryStravaApi:
   #   # layers:
   #   #   - { Ref: PythonRequirementsLambdaLayer }
@@ -459,7 +463,9 @@ custom:
     # layer: true
     dockerizePip: non-linux
     # zip: true
-    # slim: true
+    slim: true
+    slimPatterns:
+      - 'node_modules/*'
   userPoolId: { Ref: serviceUserPool }
   servicePrefix: sts1
   userPoolClientId: { Ref: serviceUserPoolClient }

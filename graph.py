@@ -1,17 +1,16 @@
 import datetime
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
-import os
 import json
 from pprint import pprint
 from botocore.exceptions import ClientError
+from config import Config
 
-PEAKS_TABLE = os.environ["PEAKS_TABLE"]
-STRAVA_AUTH_TABLE_NAME = os.environ["STRAVA_AUTH_TABLE"]
+config = Config()
 
-dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
-peaks_table = dynamodb.Table(PEAKS_TABLE)
-strava_auth_table = dynamodb.Table(STRAVA_AUTH_TABLE_NAME)
+dynamodb = boto3.resource("dynamodb", region_name=config.aws_region)
+peaks_table = dynamodb.Table(config.athlete_peaks_table)
+strava_auth_table = dynamodb.Table(config.strava_auth_table)
 
 
 def main(event, context):
@@ -25,7 +24,7 @@ def main(event, context):
         params = {
             "limit": 10,
             "duration": 300,
-            "attribute": "watts",
+            "attribute": "heartrate",
             "type": "Ride",
         }
 

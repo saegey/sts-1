@@ -3,14 +3,12 @@ import urllib.request
 from jose import jwk, jwt
 from jose.utils import base64url_decode
 import time
-import os
+from config import Config
 
-region = "us-east-1"
-userpool_id = os.environ["USER_POOL_ID"]
-app_client_id = os.environ["USER_POOL_CLIENT_ID"]
+config = Config()
 
 keys_url = "https://cognito-idp.{region}.amazonaws.com/{userpool_id}/.well-known/jwks.json".format(
-    region=region, userpool_id=userpool_id
+    region=config.aws_region, userpool_id=config.cognito_user_pool_id
 )
 # # instead of re-downloading the public keys every time
 # # we download them only on cold start
@@ -78,7 +76,7 @@ def main(event, context):
         # return {"statusCode": 401, "body": '{"token_expired": "true"'}
 
     # and the Audience  (use claims['client_id'] if verifying an access token)
-    if claims["aud"] != app_client_id:
+    if claims["aud"] != config.cognito_user_pool_client_id:
         print("Token was not issued for this audience")
         return generate_policy(claims["sub"], "Deny", event["methodArn"])
     # now we can use the claims

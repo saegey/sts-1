@@ -3,16 +3,13 @@ from jinja2 import Environment, FileSystemLoader
 import os
 import boto3
 from boto3.dynamodb.conditions import Key
-from stravalib.client import Client
+from stravalib.client import Client as StravaClient
 from pprint import pprint
+from config import Config
 
+config = Config()
 dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
-STRAVA_AUTH_TABLE_NAME = os.environ["STRAVA_AUTH_TABLE"]
-QUEUE_URL = os.environ["SQS_QUEUE_URL"]
-COGNITO_URL = os.environ["COGNITO_URL"]
-strava_auth_table = dynamodb.Table(STRAVA_AUTH_TABLE_NAME)
-
-ssm_client = boto3.client("ssm", region_name="us-east-1")
+strava_auth_table = dynamodb.Table(config.strava_auth_table)
 sqs = boto3.client("sqs")
 
 
@@ -30,20 +27,14 @@ HTML_HEADERS = {
     "Content-Type": "text/html",
 }
 
-
-def get_secret(key):
-    resp = ssm_client.get_parameter(Name=key, WithDecryption=True)
-    return resp["Parameter"]["Value"]
-
-
 params = {
-    "strava_client_id": get_secret("STRAVA_CLIENT_ID"),
-    "user_pool": os.environ["USER_POOL"],
-    "callback_url": os.environ["URL"],
-    "user_pool_client_id": os.environ["USER_POOL_CLIENT_ID"],
-    "cognito_login_url": os.environ["COGNITO_LOGIN_URL"],
-    "stage": os.environ["STAGE"],
-    "cognito_url": os.environ["COGNITO_URL"]
+    "strava_client_id": config.strava_client_id,
+    "user_pool": config.cognito_user_pool,
+    "callback_url": config.callback_url,
+    "user_pool_client_id": config.cognito_user_pool_client_id,
+    "cognito_login_url": config.cognito_login_url,
+    "stage": config.stage,
+    "cognito_url": config.cognito_url
 }
 
 
@@ -83,7 +74,7 @@ def backfill_athlete(event, context):
     # TODO - if no auth response it should return error
 
     response = sqs.send_message(
-        QueueUrl=QUEUE_URL,
+        QueueUrl=config.backfill_athlete_queue,
         DelaySeconds=0,
         MessageAttributes={
             "Job": {"DataType": "String", "StringValue": "BACKFILL_ATHLETE"},
@@ -99,12 +90,12 @@ def backfill_athlete(event, context):
 
 def strava_authorized(event, context):
     payload = json.loads(event["body"])
-    strava_client = Client()
+    strava_client = StravaClient()
     code = payload["code"] or None
 
     token_response = strava_client.exchange_code_for_token(
-        client_id=get_secret("STRAVA_CLIENT_ID"),
-        client_secret=get_secret("STRAVA_CLIENT_SECRET"),
+        client_id=config.strava_client_id,
+        client_secret=config.strava_client_secret,
         code=code,
     )
     access_token = token_response["access_token"]
@@ -130,7 +121,7 @@ def strava_authorized(event, context):
     # TODO - if no auth response it should return error
 
     response = sqs.send_message(
-        QueueUrl=QUEUE_URL,
+        QueueUrl=config.backfill_athlete_queue,
         DelaySeconds=0,
         MessageAttributes={
             "Job": {"DataType": "String", "StringValue": "BACKFILL_ATHLETE"},
@@ -148,12 +139,12 @@ def strava_authorized(event, context):
 
 
 def strava_auth(event, context):
-    strava_client = Client()
+    strava_client = StravaClient()
     redirect_uri = "{callback_url}strava-callback".format(
-        callback_url=os.environ["URL"]
+        callback_url=config.callback_url
     )
     authorize_url = strava_client.authorization_url(
-        client_id=get_secret("STRAVA_CLIENT_ID"), redirect_uri=redirect_uri,
+        client_id=config.strava_client_id, redirect_uri=redirect_uri,
     )
     return {
         "statusCode": 200,

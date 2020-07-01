@@ -1,12 +1,10 @@
 import boto3
-import os
 import json
-from pprint import pprint
+from config import Config
 
-PEAKS_TABLE = os.environ["PEAKS_TABLE"]
+config = Config()
 PEAK_DURATIONS = [5, 60, 300, 600, 1200, 3600, 5400]
 TYPE = {"rowing": ["Rowing"], "cycling": ["VirtualRide", "Ride"]}
-
 dynamo_client = boto3.client("dynamodb")
 s3_client = boto3.client("s3")
 
@@ -113,6 +111,6 @@ def main(event, context):
                         item["suffer_score"] = {
                             "N": str(activity_res_body["suffer_score"])}
                     res = dynamo_client.put_item(
-                        TableName=PEAKS_TABLE, Item=item)
+                        TableName=config.athlete_peaks_table, Item=item)
                     print(res)
     return True
