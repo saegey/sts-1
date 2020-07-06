@@ -87,7 +87,7 @@ provider:
     STAGE: ${self:custom.stage}
     SQS_QUEUE_URL: { "Ref": "backfillAthleteQueue" }
     STRAVA_API_QUEUE_URL: { "Ref": "stravaApiQueue" }
-    BUCKET: { "Fn::GetAtt": ["stravaAthleteDataBucket", "DomainName"] }
+    BUCKET: { "Ref": "stravaAthleteDataBucket" }
 
   package:
     excludeDevDependencies: true
@@ -110,6 +110,9 @@ functions:
           method: get
           authorizer: auth
           cors: true
+
+  calculatePeaksForAthlete:
+    handler: ingest_strava.calculate_peaks_for_athlete
 
   stravaAuthorized:
     handler: index.strava_authorized
@@ -210,6 +213,10 @@ functions:
   enqueueStravaAthleteSync:
     handler: ingest_strava.enqueue_strava_athlete_sync
     timeout: 300
+    events:
+      - schedule:
+          name: scheduleEnqueueStravaAthleteSync
+          rate: rate(10 minutes)
   # snsRetryStravaApi:
   #   # layers:
   #   #   - { Ref: PythonRequirementsLambdaLayer }
@@ -254,7 +261,7 @@ resources:
         # RedrivePolicy:
         #   deadLetterTargetArn: !GetAtt snsDeadLetterQueue.Arn
         #   maxReceiveCount: 10
-        VisibilityTimeout: 300
+        VisibilityTimeout: 120
         DelaySeconds: 0
         MaximumMessageSize: 262144
         MessageRetentionPeriod: 864000
@@ -271,7 +278,7 @@ resources:
       Properties:
         QueueName: ${self:custom.servicePrefix}-strava-api-${opt:stage, self:provider.stage}.fifo
         ContentBasedDeduplication: true
-        VisibilityTimeout: 600
+        VisibilityTimeout: 120
         FifoQueue: true
 
     QueuePolicy:
@@ -452,6 +459,7 @@ plugins:
   - serverless-python-requirements
   - serverless-offline
   - serverless-domain-manager
+  - serverless-export-env
 
 custom:
   customDomain:
@@ -479,7 +487,7 @@ custom:
   stravaClientId: m7ci5ov0flhjlc8k4urqdknsp
   cognitoDomainSuffix: strava-peaks
   prod:
-    callbackUrl: https://sts-1.com
+    callbackUrl: https://sts-1.com/
     cognitoLoginUrl: "https://login.sts-1.com/login"
     cognitoUrl: "https://login.sts-1.com"
 

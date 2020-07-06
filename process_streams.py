@@ -51,7 +51,9 @@ def main(event, context):
     for record in event["Records"]:
         s3_events = json.loads(record['body'])
         if "Records" not in s3_events:
-            print('[ERROR] unknown payload', record['body'])
+            print('test event', record['body'])
+            continue
+
         for s3event in s3_events['Records']:
             s3_bucket = s3event['s3']['bucket']['name']
             filename = s3event['s3']['object']['key']

@@ -6,6 +6,7 @@
   "devDependencies": {
     "serverless": "^1.74.1",
     "serverless-domain-manager": "^4.1.1",
+    "serverless-export-env": "github:arabold/serverless-export-env",
     "serverless-offline": "^6.4.0",
     "serverless-python-requirements": "^5.1.0"
   }

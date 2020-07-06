@@ -14,7 +14,6 @@ strava_auth_table = dynamodb.Table(config.strava_auth_table)
 
 
 def main(event, context):
-    # print(event)
     user_id = event["requestContext"]["authorizer"]["principalId"]
     try:
         response = strava_auth_table.get_item(Key={"user_id": user_id})

@@ -15,11 +15,13 @@
     },
     {
       "type": "dynamodb",
-      "title": "athlete-peaks-prod",
-      "tableName": "athlete-peaks-prod",
+      "title": "sts1-strava-auth-prod",
+      "tableName": "sts1-strava-auth-prod",
       "awsProfile": "default",
       "region": "us-east-1"
     }
   ],
-  "maven.view": "hierarchical"
+  "maven.view": "hierarchical",
+  "serverlessConsole.autoRefreshInterval": 0,
+  "serverlessConsole.groupPerRequest": true
 }

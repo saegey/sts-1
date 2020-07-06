@@ -7,7 +7,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -22,3 +21,4 @@ node_modules/
 .requirements.zip
 .DS_Store
 __pycache__/
+.env
