@@ -1,6 +1,9 @@
+from lib.recent_athlete_peak import RecentAthletePeak
 import boto3
 import json
 from config import Config
+from pprint import pprint
+from lib.activity_peak import ActivityPeak
 
 config = Config()
 PEAK_DURATIONS = [5, 60, 300, 600, 1200, 3600, 5400]
@@ -49,6 +52,7 @@ def calc_peak(num_seconds, data_stream, activity_id):
 
 def main(event, context):
     for record in event["Records"]:
+        # print(record)
         s3_events = json.loads(record['body'])
         if "Records" not in s3_events:
             print('test event', record['body'])
@@ -76,6 +80,7 @@ def main(event, context):
                 continue
             time_stream = res_body["time"]
 
+            peaks_to_push = []
             for statistic in ["heartrate", "watts", "velocity_smooth"]:
                 for duration in PEAK_DURATIONS:
                     if statistic not in res_body:
@@ -87,32 +92,30 @@ def main(event, context):
                     if peak_value is None:
                         continue
                     elapsed_time = activity_res_body["elapsed_time"] if activity_res_body["elapsed_time"] is not None else ""
-                    peak_id = "{activity_id}_{statistic}_{duration}".format(
-                        activity_id=activity_id, statistic=statistic, duration=duration)
-                    peak_type = "{type}_{statistic}_{duration}".format(
-                        type=activity_res_body["type"], statistic=statistic, duration=str(duration))
+
                     item = {
-                        "peak_id": {"S": peak_id},
-                        "peak_type": {"S": peak_type},
-                        "attribute": {"S": statistic},
-                        "value": {"N": str(peak_value)},
-                        "activity_id": {"S": str(activity_id)},
-                        "athlete_id": {"S": str(athlete_id)},
-                        "duration": {"N": str(duration)},
-                        "start_date_local": {"S": activity_res_body["start_date_local"]},
-                        "name": {"S": activity_res_body["name"]},
-                        "type": {"S": activity_res_body["type"]},
-                        "trainer": {"S": str(activity_res_body["trainer"])},
-                        "elapsed_time": {"S": elapsed_time},
+                        "peak_id": "{activity_id}_{statistic}_{duration}".format(
+                            activity_id=activity_id, statistic=statistic, duration=duration),
+                        "peak_type": "{type}_{statistic}_{duration}".format(
+                            type=activity_res_body["type"], statistic=statistic, duration=str(duration)),
+                        "attribute": statistic,
+                        "value": str(peak_value),
+                        "activity_id": str(activity_id),
+                        "athlete_id": str(athlete_id),
+                        "duration": str(duration),
+                        "start_date_local": activity_res_body["start_date_local"],
+                        "name": activity_res_body["name"],
+                        "type": activity_res_body["type"],
+                        "trainer": str(activity_res_body["trainer"]),
+                        "elapsed_time": elapsed_time,
                     }
 
                     if activity_res_body["distance"] is not None:
-                        item["distance"] = {
-                            "N": str(activity_res_body["distance"])}
+                        item["distance"] = str(activity_res_body["distance"])
                     if activity_res_body["suffer_score"] is not None:
-                        item["suffer_score"] = {
-                            "N": str(activity_res_body["suffer_score"])}
-                    res = dynamo_client.put_item(
-                        TableName=config.athlete_peaks_table, Item=item)
-                    print(res)
+                        item["suffer_score"] = str(activity_res_body["suffer_score"])
+                    peaks_to_push.append(item)
+            # pprint(peaks_to_push)
+            activity_peak = ActivityPeak(peaks_to_push).save()
+            RecentAthletePeak.enqueue(athlete_id)
     return True

@@ -6,6 +6,7 @@ from boto3.dynamodb.conditions import Key
 from stravalib.client import Client as StravaClient
 from pprint import pprint
 from config import Config
+from lib.recent_athlete_peak import RecentAthletePeak
 
 config = Config()
 dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
@@ -165,6 +166,27 @@ def profile(event, context):
     return {
         "statusCode": 200,
         "body": json.dumps(event["requestContext"]["authorizer"]),
+    }
+
+
+def recent_peaks(event, context):
+    user_id = event["requestContext"]["authorizer"]["principalId"]
+    response = strava_auth_table.query(
+        KeyConditionExpression=Key("user_id").eq(user_id)
+    )
+    # print(response)
+    athlete_id = response["Items"][0]["athlete_id"]
+    res = RecentAthletePeak.fetch(athlete_id)
+    formatted_items = []
+    for item in res['Items']:
+        formatted_items += item["data"]
+
+    formatted_items.sort(
+        key=lambda x: int(x['date_timestamp']), reverse=True)
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps(formatted_items, default=str),
     }
 
 

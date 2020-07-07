@@ -7,8 +7,12 @@ class Config():
     def __init__(self):
         self.ssm_client = boto3.client("ssm", region_name="us-east-1")
         self.strava_auth_table = os.environ["STRAVA_AUTH_TABLE"]
+        self.recent_athlete_peaks_table = os.environ["RECENT_ATHLETE_PEAKS_TABLE"]
+
         self.strava_api_queue_url = os.environ["STRAVA_API_QUEUE_URL"]
         self.backfill_athlete_queue = os.environ["SQS_QUEUE_URL"]
+        self.recent_athlete_peaks_to_s3 = os.environ["RECENT_ATHLETE_PEAKS_QUEUE"]
+
         self.athlete_peaks_table = os.environ["PEAKS_TABLE"]
         self.strava_api_uri = "https://www.strava.com/api/v3"
         self.strava_api_s3_bucket = os.getenv("BUCKET").split(".")[0]

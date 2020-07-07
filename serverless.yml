@@ -14,6 +14,8 @@ provider:
         - { "Fn::GetAtt": ["backfillAthleteQueue", "Arn"] }
         - { "Fn::GetAtt": ["peaksS3ToDynamoQueue", "Arn"] }
         - { "Fn::GetAtt": ["stravaApiQueue", "Arn"] }
+        - { "Fn::GetAtt": ["allPeaksToDynamoAthleteRecentQueue", "Arn"] }
+        - { "Fn::GetAtt": ["recentAthletePeaksQueue", "Arn"] }
 
     - Effect: Allow
       Action:
@@ -45,11 +47,13 @@ provider:
         - dynamodb:PutItem
         - dynamodb:UpdateItem
         - dynamodb:DeleteItem
+        - dynamodb:BatchWriteItem
       Resource:
         # TODO - lookup if this is the correct way to handle resources
         - { "Fn::GetAtt": ["ActivitiesDynamoDBTable", "Arn"] }
         - { "Fn::GetAtt": ["PeaksDynamoDBTable", "Arn"] }
         - { "Fn::GetAtt": ["StravaAuthDynamoDBTable", "Arn"] }
+        - { "Fn::GetAtt": ["RecentAthletePeaksDynamoDBTable", "Arn"] }
 
     - Effect: Allow
       Action:
@@ -73,20 +77,29 @@ provider:
     #     - { "Ref": snsDeadLetterQueue" }
 
   environment:
+    # Dynamo tables
     ACTIVITIES_TABLE: ${self:custom.activitiesTable}
     PEAKS_TABLE: ${self:custom.peaksTable}
     STRAVA_AUTH_TABLE: ${self:custom.stravaAuthTable}
+    RECENT_ATHLETE_PEAKS_TABLE: ${self:custom.recentAthletePeaksTable}
+
+    # User auth
     DOMAIN_SUFFIX: ${self:custom.cognitoDomainSuffix}
     USER_POOL: ${self:custom.userPoolName}
-    STRAVA_CLIENT_ID: ${self:custom.stravaClientId}
     COGNITO_LOGIN_URL: ${self:custom.${self:custom.stage}.cognitoLoginUrl}
     COGNITO_URL: ${self:custom.${self:custom.stage}.cognitoUrl}
     URL: ${self:custom.${self:custom.stage}.callbackUrl}
     USER_POOL_ID: ${opt:poolid, self:custom.userPoolId}
     USER_POOL_CLIENT_ID: ${opt:clientid, self:custom.userPoolClientId}
+
     STAGE: ${self:custom.stage}
+    STRAVA_CLIENT_ID: ${self:custom.stravaClientId}
+
+    # SQS QUEUE
     SQS_QUEUE_URL: { "Ref": "backfillAthleteQueue" }
     STRAVA_API_QUEUE_URL: { "Ref": "stravaApiQueue" }
+    RECENT_ATHLETE_PEAKS_QUEUE: { "Ref": "recentAthletePeaksQueue"}
+
     BUCKET: { "Ref": "stravaAthleteDataBucket" }
 
   package:
@@ -110,9 +123,6 @@ functions:
           method: get
           authorizer: auth
           cors: true
-
-  calculatePeaksForAthlete:
-    handler: ingest_strava.calculate_peaks_for_athlete
 
   stravaAuthorized:
     handler: index.strava_authorized
@@ -153,12 +163,19 @@ functions:
           method: get
 
   graph:
-    # layers:
-    #   - { Ref: PythonRequirementsLambdaLayer }
     handler: graph.main
     events:
       - http:
           path: /api/graph
+          method: get
+          authorizer: auth
+          cors: true
+
+  recentPeaks:
+    handler: index.recent_peaks
+    events:
+      - http:
+          path: /api/athlete/peaks/recent
           method: get
           authorizer: auth
           cors: true
@@ -214,17 +231,13 @@ functions:
     handler: ingest_strava.enqueue_strava_athlete_sync
     timeout: 300
     events:
-      - schedule:
-          name: scheduleEnqueueStravaAthleteSync
-          rate: rate(10 minutes)
+      - schedule: ${self:custom.${self:custom.stage}.schedule}
   # snsRetryStravaApi:
   #   # layers:
   #   #   - { Ref: PythonRequirementsLambdaLayer }
   #   handler: ingest_strava.
 
   fetchStravaApi:
-    # layers:
-    #   - { Ref: PythonRequirementsLambdaLayer }
     handler: ingest_strava.fetch_strava_api
     reservedConcurrency: 1
     timeout: 300
@@ -233,6 +246,23 @@ functions:
           arn: { "Fn::GetAtt": ["stravaApiQueue", "Arn"] }
           batchSize: 1
     # onError: { "Ref": "snsDeadLetterQueue" }
+
+  processPeaksToRecent:
+    handler: ingest_strava.process_peaks
+    reservedConcurrency: 1
+    timeout: 60
+    events:
+      - sqs:
+          arn: { "Fn::GetAtt": ["allPeaksToDynamoAthleteRecentQueue", "Arn"] }
+          batchSize: 1
+
+  calculatePeaksForAthlete:
+    handler: ingest_strava.calculate_peaks_for_athlete
+    timeout: 60
+    events:
+      - sqs:
+          arn: { "Fn::GetAtt": ["recentAthletePeaksQueue", "Arn"] }
+          batchSize: 1
 
   processStravaStreamsFromS3:
     # layers:
@@ -261,7 +291,20 @@ resources:
         # RedrivePolicy:
         #   deadLetterTargetArn: !GetAtt snsDeadLetterQueue.Arn
         #   maxReceiveCount: 10
-        VisibilityTimeout: 120
+        VisibilityTimeout: 60
+        DelaySeconds: 0
+        MaximumMessageSize: 262144
+        MessageRetentionPeriod: 864000
+        ReceiveMessageWaitTimeSeconds: 0
+
+    allPeaksToDynamoAthleteRecentQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.servicePrefix}-recent-athlete-peaks-${opt:stage, self:provider.stage}
+        # RedrivePolicy:
+        #   deadLetterTargetArn: !GetAtt snsDeadLetterQueue.Arn
+        #   maxReceiveCount: 10
+        VisibilityTimeout: 300
         DelaySeconds: 0
         MaximumMessageSize: 262144
         MessageRetentionPeriod: 864000
@@ -271,15 +314,59 @@ resources:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:custom.servicePrefix}-backfill-athlete-${opt:stage, self:provider.stage}
-        VisibilityTimeout: 300
+        VisibilityTimeout: 60
 
     stravaApiQueue:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:custom.servicePrefix}-strava-api-${opt:stage, self:provider.stage}.fifo
         ContentBasedDeduplication: true
-        VisibilityTimeout: 120
+        VisibilityTimeout: 60
         FifoQueue: true
+
+    recentAthletePeaksQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.servicePrefix}-pending-recent-athlete-peaks-${opt:stage, self:provider.stage}.fifo
+        ContentBasedDeduplication: true
+        VisibilityTimeout: 60
+        DelaySeconds: 300
+        FifoQueue: true
+
+    RecentPeaksQueuePolicy:
+      Type: AWS::SQS::QueuePolicy
+      DependsOn:
+        - allPeaksToDynamoAthleteRecentQueue
+      Properties:
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                AWS: "*"
+              Action:
+                - SQS:SendMessage
+              # Target a wildcard resource name based on the same format as QueueName
+              Resource:
+                !Join [
+                  "",
+                  [
+                    "arn:aws:sqs:*:*:",
+                    "${self:custom.servicePrefix}-recent-athlete-peaks-${opt:stage, self:provider.stage}",
+                  ],
+                ]
+              Condition:
+                ArnLike:
+                  aws:SourceArn:
+                    !Join [
+                      "",
+                      [
+                        "arn:aws:s3:*:*:",
+                        "${self:custom.servicePrefix}-strava-athlete-${opt:stage, self:provider.stage}",
+                      ],
+                    ]
+        Queues:
+          - !Ref allPeaksToDynamoAthleteRecentQueue
 
     QueuePolicy:
       Type: AWS::SQS::QueuePolicy
@@ -320,6 +407,7 @@ resources:
       Type: AWS::S3::Bucket
       DependsOn:
         - peaksS3ToDynamoQueue
+        - allPeaksToDynamoAthleteRecentQueue
       Properties:
         BucketName: ${self:custom.servicePrefix}-strava-athlete-${opt:stage, self:provider.stage}
         NotificationConfiguration:
@@ -331,6 +419,14 @@ resources:
                   Rules:
                     - Name: prefix
                       Value: streams_
+            - Event: s3:ObjectCreated:*
+              Queue:
+                { "Fn::GetAtt": ["allPeaksToDynamoAthleteRecentQueue", "Arn"] }
+              Filter:
+                S3Key:
+                  Rules:
+                    - Name: prefix
+                      Value: peaks_
 
     serviceUserPool:
       Type: AWS::Cognito::UserPool
@@ -380,7 +476,6 @@ resources:
             AttributeType: S
           - AttributeName: activity_id
             AttributeType: S
-
         KeySchema:
           - AttributeName: athlete_id
             KeyType: HASH
@@ -390,6 +485,24 @@ resources:
           ReadCapacityUnits: 1
           WriteCapacityUnits: 1
         TableName: ${self:custom.activitiesTable}
+
+    RecentAthletePeaksDynamoDBTable:
+      Type: "AWS::DynamoDB::Table"
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: athlete_id
+            AttributeType: S
+          - AttributeName: peak_type
+            AttributeType: S
+        KeySchema:
+          - AttributeName: athlete_id
+            KeyType: HASH
+          - AttributeName: peak_type
+            KeyType: RANGE
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:custom.recentAthletePeaksTable}
 
     PeaksDynamoDBTable:
       Type: "AWS::DynamoDB::Table"
@@ -464,7 +577,7 @@ plugins:
 custom:
   customDomain:
     domainName: sts-1.com
-    basePath: ''
+    basePath: ""
     stage: prod
     createRoute53Record: true
   pythonRequirements:
@@ -473,13 +586,14 @@ custom:
     # zip: true
     slim: true
     slimPatterns:
-      - 'node_modules/*'
+      - "node_modules/*"
   userPoolId: { Ref: serviceUserPool }
   servicePrefix: sts1
   userPoolClientId: { Ref: serviceUserPoolClient }
   activitiesTable: "${self:custom.servicePrefix}-activities-${self:provider.stage}"
   peaksTable: "${self:custom.servicePrefix}-peaks-${self:provider.stage}"
   stravaAuthTable: "${self:custom.servicePrefix}-strava-auth-${self:provider.stage}"
+  recentAthletePeaksTable: "${self:custom.servicePrefix}-recent-athlete-peak-${self:provider.stage}"
   stage: "${opt:stage, self:provider.stage}"
   userPoolPrefix: service-user-pool
   userPoolName: ${self:custom.userPoolPrefix}-${opt:stage, self:provider.stage}
@@ -490,24 +604,11 @@ custom:
     callbackUrl: https://sts-1.com/
     cognitoLoginUrl: "https://login.sts-1.com/login"
     cognitoUrl: "https://login.sts-1.com"
-
-  qa:
-    callbackUrl:
-      {
-        "Fn::Join":
-          [
-            "",
-            [
-              "https://",
-              { "Ref": "ApiGatewayRestApi" },
-              ".execute-api.${self:custom.region}.amazonaws.com/${self:custom.stage}/",
-            ],
-          ],
-      }
-    cognitoLoginUrl: "https://${self:custom.userPoolPrefix}-domain-${opt:stage, self:provider.stage}-${self:custom.cognitoDomainSuffix}.auth.${self:custom.region}.amazoncognito.com/login"
-    cognitoUrl: "https://${self:custom.userPoolPrefix}-domain-${opt:stage, self:provider.stage}-${self:custom.cognitoDomainSuffix}.auth.${self:custom.region}.amazoncognito.com"
-
+    schedule:
+      rate: rate(10 minutes)
   dev:
     callbackUrl: http://localhost:3000/dev
     cognitoLoginUrl: "https://${self:custom.userPoolPrefix}-domain-${opt:stage, self:provider.stage}-${self:custom.cognitoDomainSuffix}.auth.${self:custom.region}.amazoncognito.com/login"
     cognitoUrl: "https://${self:custom.userPoolPrefix}-domain-${opt:stage, self:provider.stage}-${self:custom.cognitoDomainSuffix}.auth.${self:custom.region}.amazoncognito.com"
+    schedule:
+      rate: rate(240 minutes)
