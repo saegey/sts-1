@@ -1,5 +1,61 @@
 {% set onload = "loadPage()" %} {% extends '_template.html' %} {% block content
 %}
+<style>
+  body {
+    background-color: rgba(0, 0, 0, 0.4);
+  }
+  #container {
+    background-color: unset;
+  }
+  #chart {
+    filter: blur(5px);
+  }
+  /* The Modal (background) */
+  .modal {
+    display: none; /* Hidden by default */
+    position: fixed; /* Stay in place */
+    z-index: 1; /* Sit on top */
+    left: 0;
+    top: 0;
+    width: 100%; /* Full width */
+    height: 100%; /* Full height */
+    overflow: auto; /* Enable scroll if needed */
+    background-color: rgb(0, 0, 0); /* Fallback color */
+    background-color: rgba(0, 0, 0, 0.4); /* Black w/ opacity */
+  }
+
+  /* Modal Content/Box */
+  .modal-content {
+    background-color: #fefefe;
+    margin: 15% auto; /* 15% from the top and centered */
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%; /* Could be more or less, depending on screen size */
+  }
+
+  /* The Close Button */
+  .close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+  }
+
+  .close:hover,
+  .close:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+  }
+</style>
+<!-- The Modal -->
+<div id="myModal" class="modal">
+  <!-- Modal content -->
+  <div class="modal-content">
+    <span class="close">&times;</span>
+    <p>No data found for current filter</p>
+  </div>
+</div>
 <div>
   <div id="top">
     <div id="header">
@@ -44,6 +100,10 @@
   Chart.defaults.global.defaultFontColor = "#2e3440";
   Chart.defaults.global.legend.display = false;
   var STRAVA_CLIENT_ID = "m7ci5ov0flhjlc8k4urqdknsp";
+  var modal = document.getElementById("myModal");
+  var body = document.getElementsByTagName('body')[0];
+  var peaksList = document.getElementById("peaks-list");
+  var chartContainer = document.getElementById("chart")
 
   var url = "";
   if (STAGE === "prod") {
@@ -60,6 +120,18 @@
       "bearer " + localStorage.getItem("Authorization")
     );
     xhr.send();
+  };
+
+  var span = document.getElementsByClassName("close")[0];
+  // When the user clicks on <span> (x), close the modal
+  span.onclick = function () {
+    modal.style.display = "none";
+  };
+
+  window.onclick = function (event) {
+    if (event.target == modal) {
+      modal.style.display = "none";
+    }
   };
 
   var logout = function (event) {
@@ -80,6 +152,11 @@
   };
 
   var menuClickEvent = function (event, menuId) {
+    myChart.data.datasets = [];
+    myChart.update();
+    body.style.background = "rgba(0, 0, 0, 0.4)";
+    peaksList.style.filter = "blur(5px)";
+    chartContainer.style.filter = "blur(5px)";
     var urlParams = new URLSearchParams(window.location.search);
     var menuValue = event.target.attributes.getNamedItem("data-value").value;
     urlParams.set(menuId, menuValue);
@@ -272,7 +349,18 @@
         COGNITO_LOGIN_URL + "?" + new URLSearchParams(params)
       );
     } else {
+      body.style.background = "whitesmoke";
+      peaksList.style.filter = "unset";
+      chartContainer.style.filter = "unset";
+
       var peaksData = JSON.parse(xhr.responseText);
+      if (peaksData.length === 0) {
+        modal.style.display = "block";
+        setTimeout(function () {
+          modal.style.display = "none";
+        }, 3000);
+        console.log("no data found");
+      }
       var temp = document.getElementById("activity-template");
       var item = temp.content.querySelector("li");
       //get the div element from the template:
