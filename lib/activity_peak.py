@@ -1,6 +1,8 @@
 import boto3
 from config import Config
 from boto3.dynamodb.conditions import Key
+from datetime import datetime
+from decimal import Decimal
 
 config = Config()
 dynamodb = boto3.resource("dynamodb", config.aws_region)
@@ -8,8 +10,33 @@ peaks_table = dynamodb.Table(config.athlete_peaks_table)
 
 
 class ActivityPeak():
+    def __init__(self, dataset):
+        self.dataset = dataset
+
+    def save(self):
+        with peaks_table.batch_writer() as batch:
+            for row in self.dataset:
+                print("batch saving activity => ",
+                      row["activity_id"], " peak_id: ", row["peak_id"])
+                batch.put_item({
+                    "activity_id": row["activity_id"],
+                    "athlete_id": row["athlete_id"],
+                    "attribute": row["attribute"],
+                    "distance": Decimal(row["distance"]),
+                    "duration": int(row["duration"]),
+                    "elapsed_time": row["elapsed_time"],
+                    "name": row["name"],
+                    "peak_id": row["peak_id"],
+                    "peak_type": row["peak_type"],
+                    "start_date_local": row["start_date_local"],
+                    "trainer": row["trainer"],
+                    "type": row["type"],
+                    "value": Decimal(row["value"]),
+                    "last_updated": int(datetime.now().timestamp())
+                })
+
     @classmethod
-    def getAll(cls, athlete_id, exclusive_start_key=None):
+    def get_all(cls, athlete_id, exclusive_start_key=None):
         peaks_response = {}
         if exclusive_start_key:
             peaks_response = peaks_table.query(
@@ -27,12 +54,12 @@ class ActivityPeak():
         return peaks_response
 
     @classmethod
-    def getTop(cls, athlete_id):
+    def get_top(cls, athlete_id):
         items = []
         exclusive_start_key = None
         while True:
             print('querying results from dynamo', exclusive_start_key)
-            results = cls.getAll(athlete_id, exclusive_start_key)
+            results = cls.get_all(athlete_id, exclusive_start_key)
             items = items + results['Items']
             if "LastEvaluatedKey" not in results:
                 break

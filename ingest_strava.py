@@ -8,6 +8,7 @@ from lib.strava_activity import StravaActivity
 from lib.strava_athlete import StravaAthlete
 from lib.strava_enqueue import EnqStravaApiActivities
 from lib.activity_peak import ActivityPeak
+from lib.recent_athlete_peak import RecentAthletePeak
 from pprint import pprint
 
 STREAM_TYPES = [
@@ -90,12 +91,10 @@ def enqueue_strava_athlete_sync(event, context):
 
 def calculate_peaks_for_athlete(event, context):
     for athlete in event["Records"]:
-        job = athlete["messageAttributes"]["Job"]["stringValue"]
-        user_id = athlete["messageAttributes"]["UserId"]["stringValue"]
         athlete_id = athlete["messageAttributes"]["AthleteId"]["stringValue"]
 
-        print(job, user_id, athlete_id)
-        results = ActivityPeak.getTop(athlete_id)
+        print(athlete_id)
+        results = ActivityPeak.get_top(athlete_id)
         # pprint(results)
         peaks_filename = "peaks_{athlete_id}.json".format(
             athlete_id=athlete_id)
@@ -107,6 +106,31 @@ def calculate_peaks_for_athlete(event, context):
         )
         print('writing peaks file to => {filename}'.format(
             filename=peaks_filename))
+
+
+def process_peaks(event, context):
+    # print(event)
+    for record in event["Records"]:
+        body = json.loads(record['body'])
+        for s3_file in body['Records']:
+            bucket = s3_file['s3']['bucket']['name']
+            key = s3_file['s3']['object']['key']
+            response = s3_client.get_object(Bucket=bucket, Key=key)
+            res_body = json.load(response["Body"])
+
+            recent_peaks = {}
+            for peak_type in res_body:
+                for i, peak in enumerate(res_body[peak_type][0:9], 1):
+                    peak_date = datetime.strptime(
+                        peak["start_date_local"], "%Y-%m-%dT%H:%M:%S")
+                    if peak_date > (datetime.now() - timedelta(days=30)):
+                        peak["date_timestamp"] = int(peak_date.timestamp())
+                        peak["rank"] = i
+                        if peak_type not in recent_peaks:
+                            recent_peaks[peak_type] = []
+                        recent_peaks[peak_type].append(peak)
+
+            RecentAthletePeak.bulk_save(recent_peaks)
 
 
 def fetch_strava_api(event, context):

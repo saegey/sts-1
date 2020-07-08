@@ -1,7 +1,92 @@
 {% set onload = "loadPage()" %} {% extends '_template.html' %} {% block content
 %}
+<style>
+  body {
+    background-color: rgba(0, 0, 0, 0.4);
+  }
+  #container {
+    background-color: unset;
+  }
+  #chart {
+    filter: blur(5px);
+  }
+  /* The Modal (background) */
+  .modal {
+    display: none; /* Hidden by default */
+    position: fixed; /* Stay in place */
+    z-index: 1; /* Sit on top */
+    left: 0;
+    top: 0;
+    width: 100%; /* Full width */
+    height: 100%; /* Full height */
+    overflow: auto; /* Enable scroll if needed */
+    background-color: rgb(0, 0, 0); /* Fallback color */
+    background-color: rgba(0, 0, 0, 0.4); /* Black w/ opacity */
+  }
+
+  /* Modal Content/Box */
+  .modal-content {
+    background-color: #fefefe;
+    margin: 15% auto; /* 15% from the top and centered */
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%; /* Could be more or less, depending on screen size */
+  }
+
+  /* The Close Button */
+  .close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+  }
+
+  .close:hover,
+  .close:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  #recent-peaks-list li {
+    margin-bottom: 2vw;
+  }
+  #recent-peaks-list .rank {
+    width: 5vw !important;
+    display: inline-flex;
+  }
+  #recent-peaks-list .value {
+    width: 80vw !important;
+    display: inline-flex;
+  }
+  #recent-peaks-list .name {
+    display: block;
+    padding-left: 8vw;
+    color: gray;
+    width: 80vw;
+  }
+  #recent-peaks-list .date {
+    display: block;
+    padding-left: 8vw;
+    color: gray;
+    width: 80vw;
+  }
+  #recent-peaks-list .attribute {
+    display: block;
+    padding-left: 8vw;
+    width: 80vw;
+    color: gray;
+  }
+</style>
+<!-- The Modal -->
+<div id="myModal" class="modal">
+  <!-- Modal content -->
+  <div class="modal-content">
+    <span class="close">&times;</span>
+    <p>No data found for current filter</p>
+  </div>
+</div>
 <div>
-  <div id="top">
+  <div id="header-top">
     <div id="header">
       <header class="title">
         <h1><span class="logo">///</span> STS-1</h1>
@@ -9,6 +94,22 @@
       <div class="menu">
         <nav>
           <ul>
+            <li>
+              <a
+                href="/athlete/graph"
+                title="Graph"
+                onClick="loadGraph(event); return false;"
+                >Graph</a
+              >
+            </li>
+            <li>
+              <a
+                href="/athlete/recent-peaks"
+                title="Recent Peaks"
+                onClick="clickRecentPeaks(event); return false;"
+                >Recent</a
+              >
+            </li>
             <li>
               <a href="#logout" title="Logout" onClick="logout(); return false;"
                 >Logout</a
@@ -18,24 +119,28 @@
         </nav>
       </div>
     </div>
-    <ul id="attribute" class="options">
+    <div id="graph-filter">
       <span>Attribute</span>
-    </ul>
-    <ul id="duration" class="options">
+      <ul id="attribute" class="options"></ul>
+      </br>
       <span>Duration</span>
-    </ul>
-    <ul id="type" class="options">
+      <ul id="duration" class="options"></ul>
+      </br>
       <span>Type</span>
-    </ul>
-    <ul id="limit" class="options">
+      <ul id="type" class="options"></ul>
+      </br>
       <span>Limit</span>
-    </ul>
+      <ul id="limit" class="options"></ul>
+    </div>
   </div>
   <div id="chart">
     <canvas id="myChart"></canvas>
   </div>
   <div id="peaks-list">
     <ul id="peaks"></ul>
+  </div>
+  <div id="recent-peaks-list" style="display: none;">
+    <ul></ul>
   </div>
 </div>
 <script>
@@ -44,22 +149,163 @@
   Chart.defaults.global.defaultFontColor = "#2e3440";
   Chart.defaults.global.legend.display = false;
   var STRAVA_CLIENT_ID = "m7ci5ov0flhjlc8k4urqdknsp";
+  var modal = document.getElementById("myModal");
+  var body = document.getElementsByTagName("body")[0];
+  var peaksList = document.getElementById("peaks-list");
+  var chartContainer = document.getElementById("chart");
+  var graphFilter = document.getElementById("graph-filter");
+  var headerTop = document.getElementById("header-top");
+  var recentPeaksList = document.getElementById("recent-peaks-list");
+  var temp = document.getElementById("menu-template");
+  var menuItem = temp.content.querySelector("li");
+  var attributeMenu = document.getElementById('attribute');
+  var durationMenu = document.getElementById('duration');
+  var typeMenu = document.getElementById('type');
+  var limitMenu = document.getElementById('limit');
 
-  var url = "";
-  if (STAGE === "prod") {
-    url = "/api/graph";
-  } else {
-    url = "/" + STAGE + "/api/graph";
-  }
+  var menuItems = {
+      limit: [10, 25, 50, 100],
+      attribute: ["heartrate", "watts", "velocity_smooth"],
+      duration: [5, 60, 300, 600, 1200, 3600, 5400],
+      type: ["Rowing", "Ride", "VirtualRide", "Run"]
+  };
+
   var xhr = new XMLHttpRequest();
 
-  var fetchData = function (queryString) {
-    xhr.open("GET", url + "?" + queryString);
+  var apiRequest = function (path, callback) {
+    var url = CALLBACK_URL + "api" + path;
+    xhr.open("GET", url);
     xhr.setRequestHeader(
       "Authorization",
       "bearer " + localStorage.getItem("Authorization")
     );
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+        var data = JSON.parse(xhr.responseText);
+        callback(data);
+      }
+    };
     xhr.send();
+  };
+
+  var fetchData = function (queryString) {
+    apiRequest("/graph" + "?" + queryString, function (peaksData) {
+      body.style.background = "whitesmoke";
+      peaksList.style.filter = "unset";
+      chartContainer.style.filter = "unset";
+
+      //var peaksData = JSON.parse(xhr.responseText);
+      if (peaksData.length === 0) {
+        modal.style.display = "block";
+        setTimeout(function () {
+          modal.style.display = "none";
+        }, 3000);
+        console.log("no data found");
+      }
+      var temp = document.getElementById("activity-template");
+      var item = temp.content.querySelector("li");
+      //get the div element from the template:
+      var peakList = document.querySelector("#peaks");
+      peakList.innerHTML = "";
+
+      //for each item in the array:
+      loadChartData(peaksData);
+
+      var count = 1;
+      peaksData.forEach(function (peak) {
+        var a = document.importNode(item, true);
+        a.id += peak.activity_id;
+        a.querySelector(".position").textContent = count;
+
+        var val = a.querySelector(".value");
+        val.textContent = parseFloat(peak.value).toFixed(2);
+        if (peak.attribute === "heartrate") {
+          val.textContent += " bpm";
+        } else if (peak.attribute === "watts") {
+          val.textContent += " watts";
+        } else if (peak.attribute === "velocity_smooth") {
+          val.textContent += " mph";
+        }
+
+        var link = a.querySelector("a");
+        link.textContent = peak.name;
+        link.href += peak.activity_id;
+        a.querySelector(".date").textContent = peak.start_date_local;
+        peakList.appendChild(a);
+        count++;
+      });
+      showGraphPage();
+      recentPeaksList.style.display = "none";
+    });
+  };
+
+
+  var fetchRecentPeaks = function () {
+    var peakTemplate = document.getElementById("recent-peak-template");
+    var item = peakTemplate.content.querySelector("li");
+    var peakList = recentPeaksList.querySelector("ul");
+
+    apiRequest("/athlete/peaks/recent", function (data) {
+      peakList.innerHTML = "";
+      data.forEach(function (row) {
+        var node = document.importNode(item, true);
+        node.querySelector(".rank").textContent = row.rank;
+        node.querySelector(".name").textContent = row.name;
+        var value = parseFloat(row.value).toFixed(2);
+        if (row.attribute === "heartrate") {
+          value += " bpm";
+        } else if (row.attribute === "watts") {
+          value += " watts";
+        } else if (row.attribute === "velocity_smooth") {
+          value += " mph";
+        }
+        node.querySelector(".value").textContent = value;
+        node.querySelector(".date").textContent = row.start_date_local;
+        node.querySelector(".attribute").textContent = row.peak_type;
+        peakList.append(node);
+        unBlurPage();
+      });
+
+      recentPeaksList.style.display = "block";
+    });
+  };
+
+  var loadGraph = function () {
+    console.log('loadGraph');
+    var urlParams = new URLSearchParams(window.location.search);
+    applyDefaultGraphParams(urlParams);
+    fetchData(urlParams.toString());
+    showGraphPage();
+    pushGraphState(urlParams);
+    clearStateOfGraphFilters();
+
+    menuItems['attribute'].forEach(function (a) {
+      initializeMenuItem(menuItem, "attribute", a);
+    });
+
+    menuItems['duration'].forEach(function (a) {
+      initializeMenuItem(menuItem, "duration", a);
+    });
+
+    menuItems['type'].forEach(function (a) {
+      initializeMenuItem(menuItem, "type", a);
+    });
+
+    menuItems['limit'].forEach(function (a) {
+      initializeMenuItem(menuItem, "limit", a);
+    });
+  }
+
+  var span = document.getElementsByClassName("close")[0];
+  // When the user clicks on <span> (x), close the modal
+  span.onclick = function () {
+    modal.style.display = "none";
+  };
+
+  window.onclick = function (event) {
+    if (event.target == modal) {
+      modal.style.display = "none";
+    }
   };
 
   var logout = function (event) {
@@ -79,24 +325,117 @@
     window.location.replace(url);
   };
 
+  var hideGraphPage = function () {
+    graphFilter.style.display = "none";
+    headerTop.style.height = "unset !important";
+    peaksList.style.display = "none";
+    chartContainer.style.display = "none";
+  }
+
+  var showGraphPage = function () {
+    graphFilter.style.display = "block";
+    peaksList.style.display = "block";
+    chartContainer.style.display = "block";
+    recentPeaksList.style.display = "none";
+  }
+
+
+  var clickRecentPeaks = function (event) {
+    if (event) {
+      event.preventDefault();
+    }
+    console.log(event);
+    blurPage();
+    hideGraphPage();
+    fetchRecentPeaks();
+    var urlParams = new URLSearchParams(window.location.search);
+    pushRecentPeaksState(urlParams);
+  };
+
+  window.addEventListener("popstate", function (event) {
+    console.log(event.state);
+    if (event.state.page === "graph") {
+      showGraphPage();
+      var duration = event.state.duration;
+
+      updatePage(event.state);
+      // TODO - refactor to push state down to these items versus getting url params a bunch of times
+      Object.keys(menuItems).forEach(function (item) {
+        var menu = document.getElementById(item);
+        menu.innerHTML = "";
+        menuItems[item].forEach(function (d) {
+          initializeMenuItem(menuItem, item, d);
+        });
+      });
+      return;
+    }
+    if (event.state.page === "recent-peaks") {
+      showRecentPeaksPage();
+    }
+  });
+
+  var showRecentPeaksPage = function () {
+    hideGraphPage();
+    recentPeaksList.style.display = "block";
+  }
+
+  var blurPage = function () {
+    body.style.background = "rgba(0, 0, 0, 0.4)";
+    peaksList.style.filter = "blur(5px)";
+    chartContainer.style.filter = "blur(5px)";
+  };
+
+  var unBlurPage = function () {
+    body.style.background = "whitesmoke";
+
+  }
+
+  var graphState = function (urlParams) {
+    return {
+      page: "graph",
+      url: urlParams.toString(),
+      duration: urlParams.get("duration"),
+    };
+  }
+
+  var pushGraphState = function (urlParams) {
+    window.history.pushState(
+      graphState(urlParams),
+      "",
+      CALLBACK_URL + "athlete/graph?" + urlParams.toString()
+    );
+  }
+
+  var pushRecentPeaksState = function (urlParams) {
+    window.history.pushState(
+      {
+        page: "recent-peaks",
+        url: urlParams.toString(),
+      },
+      "",
+      CALLBACK_URL + "athlete/recent-peaks"
+    );
+  }
+
+  var replaceGraphState = function (urlParams) {
+    window.history.replaceState(
+      graphState(urlParams),
+      "",
+      CALLBACK_URL + "athlete/graph?" + urlParams.toString()
+    )
+  }
+
   var menuClickEvent = function (event, menuId) {
+    myChart.data.datasets = [];
+    myChart.update();
+    blurPage();
+    event.preventDefault();
+
     var urlParams = new URLSearchParams(window.location.search);
     var menuValue = event.target.attributes.getNamedItem("data-value").value;
     urlParams.set(menuId, menuValue);
 
-    if (STAGE !== "prod") {
-      window.history.replaceState(
-        "blah",
-        "test",
-        "/" + STAGE + "/athlete?" + urlParams.toString()
-      );
-    } else {
-      window.history.replaceState(
-        "blah",
-        "test",
-        "/athlete?" + urlParams.toString()
-      );
-    }
+    pushGraphState(urlParams);
 
     document.querySelectorAll("#" + menuId + " li a").forEach(function (elem) {
       if (elem.getAttribute("data-value") == urlParams.get(menuId)) {
@@ -106,7 +445,6 @@
       }
     });
     fetchData(urlParams.toString());
-    event.preventDefault();
   };
 
   var initializeMenuItem = function (menuItem, menuId, dataValue) {
@@ -128,23 +466,22 @@
     limitMenu.appendChild(listItem);
   };
 
-  var loadPage = function () {
-    var urlParams = new URLSearchParams(window.location.search);
-    if (!localStorage.getItem("Authorization")) {
-      var params = {
-        response_type: "token",
-        client_id: USER_POOL_CLIENT_ID,
-        redirect_uri: CALLBACK_URL,
-      };
-      window.location.replace(
-        COGNITO_LOGIN_URL + "?" + new URLSearchParams(params)
-      );
-    }
-    var limits = [10, 25, 50, 100];
-    var attributes = ["heartrate", "watts", "velocity_smooth"];
-    var durations = [5, 60, 300, 600, 1200, 3600, 5400];
-    var types = ["Rowing", "Ride", "VirtualRide", "Run"];
+  var redirectToLogin = function () {
+    var params = {
+      response_type: "token",
+      client_id: USER_POOL_CLIENT_ID,
+      redirect_uri: CALLBACK_URL,
+    };
+    window.location.replace(
+      COGNITO_LOGIN_URL + "?" + new URLSearchParams(params)
+    );
+  }
 
+  var updatePage = function (state) {
+    fetchData(state.url);
+  };
+
+  var applyDefaultGraphParams = function (urlParams) {
     if (!urlParams.get("limit")) {
       urlParams.set("limit", 10);
     }
@@ -154,47 +491,61 @@
     }
 
     if (!urlParams.get("duration")) {
-      urlParams.set("duration", "300");
+      urlParams.set("duration", "1200");
     }
 
     if (!urlParams.get("type")) {
-      urlParams.set("type", "Ride");
+      urlParams.set("type", "VirtualRide");
     }
+  }
+
+  var clearStateOfGraphFilters = function () {
+    attributeMenu.innerHTML = "";
+    durationMenu.innerHTML = "";
+    limitMenu.innerHTML = "";
+    typeMenu.innerHTML = "";
+  }
+
+  var initializeGraphPage = function () {
+    var urlParams = new URLSearchParams(window.location.search);
+    applyDefaultGraphParams(urlParams);
+
     fetchData(urlParams.toString());
 
-    if (STAGE === "prod") {
-      window.history.replaceState(
-        "blah",
-        "test",
-        "/athlete?" + urlParams.toString()
-      );
-    } else {
-      window.history.replaceState(
-        "blah",
-        "test",
-        "/" + STAGE + "/athlete?" + urlParams.toString()
-      );
-    }
+    replaceGraphState(urlParams);
+    clearStateOfGraphFilters();
 
-    var temp = document.getElementById("menu-template");
-    var menuItem = temp.content.querySelector("li");
-    var limitMenu = document.getElementById("limit");
-
-    attributes.forEach(function (a) {
+    menuItems['attribute'].forEach(function (a) {
       initializeMenuItem(menuItem, "attribute", a);
     });
 
-    durations.forEach(function (a) {
+    menuItems['duration'].forEach(function (a) {
       initializeMenuItem(menuItem, "duration", a);
     });
 
-    types.forEach(function (a) {
+    menuItems['type'].forEach(function (a) {
       initializeMenuItem(menuItem, "type", a);
     });
 
-    limits.forEach(function (a) {
+    menuItems['limit'].forEach(function (a) {
       initializeMenuItem(menuItem, "limit", a);
     });
+  }
+
+  var loadPage = function () {
+    if (!localStorage.getItem("Authorization")) {
+      redirectToLogin();
+    }
+    if (window.location.pathname.includes("/athlete/graph")) {
+      initializeGraphPage();
+      return;
+    }
+
+    if (window.location.pathname.includes("/athlete/recent-peaks")) {
+      initializeGraphPage();
+      clickRecentPeaks();
+      return;
+    }
   };
 
   var ctx = document.getElementById("myChart").getContext("2d");
@@ -263,48 +614,7 @@
 
   xhr.onload = function (e) {
     if (xhr.status === 403) {
-      var params = {
-        response_type: "token",
-        client_id: USER_POOL_CLIENT_ID,
-        redirect_uri: CALLBACK_URL,
-      };
-      window.location.replace(
-        COGNITO_LOGIN_URL + "?" + new URLSearchParams(params)
-      );
-    } else {
-      var peaksData = JSON.parse(xhr.responseText);
-      var temp = document.getElementById("activity-template");
-      var item = temp.content.querySelector("li");
-      //get the div element from the template:
-      var peakList = document.querySelector("#peaks");
-      peakList.innerHTML = "";
-
-      //for each item in the array:
-      loadChartData(peaksData);
-
-      var count = 1;
-      peaksData.forEach(function (peak) {
-        var a = document.importNode(item, true);
-        a.id += peak.activity_id;
-        a.querySelector(".position").textContent = count;
-
-        var val = a.querySelector(".value");
-        val.textContent = parseFloat(peak.value).toFixed(2);
-        if (peak.attribute === "heartrate") {
-          val.textContent += " bpm";
-        } else if (peak.attribute === "watts") {
-          val.textContent += " watts";
-        } else if (peak.attribute === "velocity_smooth") {
-          val.textContent += " mph";
-        }
-
-        var link = a.querySelector("a");
-        link.textContent = peak.name;
-        link.href += peak.activity_id;
-        a.querySelector(".date").textContent = peak.start_date_local;
-        peakList.appendChild(a);
-        count++;
-      });
+      redirectToLogin();
     }
   };
 </script>
