@@ -54,8 +54,8 @@
         #peaks .date {
           margin-left: 22vw !important;
         }
-        #top {
-          height: 22vh !important;
+        #header-top {
+          /* height: 22vh !important; */
         }
         #chart {
           height: 23vh !important;
@@ -72,6 +72,7 @@
           margin-block-start: 0;
           margin-block-end: 0;
         }
+
       }
       body {
         background-color:whitesmoke;
@@ -95,11 +96,16 @@
         text-decoration: none;
         color: #4c566a;
       }
+      .options {
+        display: inline-block;
+        margin-top: .3em;
+        margin-bottom: .3em;
+      }
       .options li {
         display: inline-block;
         margin-right: 8px;
       }
-      .options span {
+      #graph-filter span {
         font-weight: 700;
       }
       #container {
@@ -188,6 +194,9 @@
         width: 50%;
         text-align: right;
       }
+      #header .menu  li {
+        display: inline-block;
+      }
       .typewriter h1 {
         margin: auto;
         font-size: 10em;
@@ -207,6 +216,16 @@
       <span class="value"></span>
       <span class="name"><a href="https://www.strava.com/activities/"></a></span>
       <span class="date"></span>
+    </li>
+  </template>
+
+  <template id="recent-peak-template">
+    <li id="activity-">
+      <span class="rank">1</span>
+      <span class="value"></span>
+      <span class="name"><a href="https://www.strava.com/activities/"></a></span>
+      <span class="date"></span>
+      <span class="attribute"></span>
     </li>
   </template>
 

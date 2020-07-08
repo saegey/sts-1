@@ -206,7 +206,10 @@ functions:
     handler: athlete.main
     events:
       - http:
-          path: /athlete
+          path: /athlete/graph
+          method: get
+      - http:
+          path: /athlete/recent-peaks
           method: get
 
   # Authorization
@@ -607,7 +610,7 @@ custom:
     schedule:
       rate: rate(10 minutes)
   dev:
-    callbackUrl: http://localhost:3000/dev
+    callbackUrl: http://localhost:3000/dev/
     cognitoLoginUrl: "https://${self:custom.userPoolPrefix}-domain-${opt:stage, self:provider.stage}-${self:custom.cognitoDomainSuffix}.auth.${self:custom.region}.amazoncognito.com/login"
     cognitoUrl: "https://${self:custom.userPoolPrefix}-domain-${opt:stage, self:provider.stage}-${self:custom.cognitoDomainSuffix}.auth.${self:custom.region}.amazoncognito.com"
     schedule:
