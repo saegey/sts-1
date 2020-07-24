@@ -1,14 +1,40 @@
 {% set onload = "loadPage()" %} {% extends '_template.html' %} {% block content
 %}
 <style>
-  body {
-    background-color: rgba(0, 0, 0, 0.4);
+  .loading {
+      position: fixed;
+      top: 0; right: 0;
+      bottom: 0; left: 0;
+      background-color: rgba(255, 255, 255, 0.8);
+  }
+  .loader {
+      left: 50%;
+      margin-left: -4em;
+      font-size: 10px;
+      border: .8em solid rgba(218, 219, 223, 1);
+      border-left: .8em solid rgb(97, 97, 97);
+      animation: spin 1.1s infinite linear;
+  }
+  .loader, .loader:after {
+      border-radius: 50%;
+      width: 8em;
+      height: 8em;
+      display: block;
+      position: absolute;
+      top: 50%;
+      margin-top: -4.05em;
+  }
+
+  @keyframes spin {
+    0% {
+      transform: rotate(360deg);
+    }
+    100% {
+      transform: rotate(0deg);
+    }
   }
   #container {
     background-color: unset;
-  }
-  #chart {
-    filter: blur(5px);
   }
   /* The Modal (background) */
   .modal {
@@ -119,28 +145,33 @@
         </nav>
       </div>
     </div>
-    <div id="graph-filter">
-      <span>Attribute</span>
-      <ul id="attribute" class="options"></ul>
-      </br>
-      <span>Duration</span>
-      <ul id="duration" class="options"></ul>
-      </br>
-      <span>Type</span>
-      <ul id="type" class="options"></ul>
-      </br>
-      <span>Limit</span>
-      <ul id="limit" class="options"></ul>
+    <div id="graph-page">
+      <div id="graph-filter">
+        <span>Attribute</span>
+        <ul id="attribute" class="options"></ul>
+        </br>
+        <span>Duration</span>
+        <ul id="duration" class="options"></ul>
+        </br>
+        <span>Type</span>
+        <ul id="type" class="options"></ul>
+        </br>
+        <span>Limit</span>
+        <ul id="limit" class="options"></ul>
+      </div>
+      <div id="chart">
+        <canvas id="myChart"></canvas>
+      </div>
+      <div id="peaks-list">
+        <ul id="peaks"></ul>
+      </div>
     </div>
-  </div>
-  <div id="chart">
-    <canvas id="myChart"></canvas>
-  </div>
-  <div id="peaks-list">
-    <ul id="peaks"></ul>
   </div>
   <div id="recent-peaks-list" style="display: none;">
     <ul></ul>
+  </div>
+  <div id="loading-spinner" class="loading">
+    <div class="loader"></div>
   </div>
 </div>
 <script>
@@ -157,11 +188,13 @@
   var headerTop = document.getElementById("header-top");
   var recentPeaksList = document.getElementById("recent-peaks-list");
   var temp = document.getElementById("menu-template");
+  var graphPage = document.getElementById("graph-page");
   var menuItem = temp.content.querySelector("li");
   var attributeMenu = document.getElementById('attribute');
   var durationMenu = document.getElementById('duration');
   var typeMenu = document.getElementById('type');
   var limitMenu = document.getElementById('limit');
+  var loadingSpinner = document.getElementById('loading-spinner');
 
   var menuItems = {
       limit: [10, 25, 50, 100],
@@ -236,6 +269,7 @@
       });
       showGraphPage();
       recentPeaksList.style.display = "none";
+      unBlurPage();
     });
   };
 
@@ -272,6 +306,7 @@
 
   var loadGraph = function () {
     console.log('loadGraph');
+    blurPage();
     var urlParams = new URLSearchParams(window.location.search);
     applyDefaultGraphParams(urlParams);
     fetchData(urlParams.toString());
@@ -341,7 +376,9 @@
 
 
   var clickRecentPeaks = function (event) {
+    recentPeaksList.style.display = "block";
     if (event) {
+      console.log(event);
       event.preventDefault();
     }
     console.log(event);
@@ -354,6 +391,7 @@
 
   window.addEventListener("popstate", function (event) {
     console.log(event.state);
+    blurPage();
     if (event.state.page === "graph") {
       showGraphPage();
       var duration = event.state.duration;
@@ -377,17 +415,18 @@
   var showRecentPeaksPage = function () {
     hideGraphPage();
     recentPeaksList.style.display = "block";
+    unBlurPage();
   }
 
   var blurPage = function () {
-    body.style.background = "rgba(0, 0, 0, 0.4)";
-    peaksList.style.filter = "blur(5px)";
-    chartContainer.style.filter = "blur(5px)";
+    loadingSpinner.style.display = "block";
   };
 
   var unBlurPage = function () {
     body.style.background = "whitesmoke";
-
+    recentPeaksList.style.filter = "unset";
+    graphPage.style.filter = "unset";
+    loadingSpinner.style.display = "none";
   }
 
   var graphState = function (urlParams) {

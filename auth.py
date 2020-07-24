@@ -3,10 +3,13 @@ import urllib.request
 from jose import jwk, jwt
 from jose.utils import base64url_decode
 import time
+import boto3
 from config import Config
 
 config = Config()
 
+dynamodb = boto3.resource("dynamodb", region_name=config.aws_region)
+strava_auth_table = dynamodb.Table(config.strava_auth_table)
 keys_url = "https://cognito-idp.{region}.amazonaws.com/{userpool_id}/.well-known/jwks.json".format(
     region=config.aws_region, userpool_id=config.cognito_user_pool_id
 )
@@ -30,7 +33,15 @@ def generate_policy(principal_id, effect, resource, context=None):
             }
         ],
     }
-    response = {"policyDocument": policy, "principalId": principal_id}
+    dynamo_res = strava_auth_table.get_item(Key={"user_id": principal_id})
+
+    response = {
+        "policyDocument": policy,
+        "principalId": principal_id,
+        'context': {
+            'athleteId': dynamo_res["Item"]["athlete_id"]
+        }
+    }
     # if context is not None:
     #     response["context"] = context
 

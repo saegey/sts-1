@@ -12,9 +12,19 @@ config = Config()
 class StravaActivity():
 
     def __init__(self, data, user_id):
-        # print(json.dumps(data.to_dict()))
         self.data = data
         self.user_id = user_id
+
+    @classmethod
+    def getFromS3(cls, athelete_id, activity_id):
+        activity_filename = "activity_{athlete_id}_{activity_id}.json".format(
+            athlete_id=athelete_id,
+            activity_id=activity_id
+        )
+        s3_response =  s3_client.get_object(
+            Key=activity_filename,
+            Bucket=config.strava_api_s3_bucket)
+        return json.load(s3_response["Body"])
 
     def saveToS3(self):
         activity_filename = "activity_{athlete_id}_{activity_id}.json".format(
@@ -30,7 +40,6 @@ class StravaActivity():
             bucket=config.strava_api_s3_bucket, key=activity_filename))
 
     def enqueueStreamFetch(self):
-        # print(self.data)
         response = sqs.send_message(
             QueueUrl=config.strava_api_queue_url,
             DelaySeconds=0,
@@ -46,8 +55,8 @@ class StravaActivity():
                     activity_id=self.data.id
                 )
             ),
-            MessageGroupId="STRAVA-API"
-        )
+            MessageGroupId="STRAVA-API")
+
         return response
 
     @classmethod
@@ -68,4 +77,5 @@ class StravaActivity():
         for activity_res in activities_res:
             activities.append(StravaActivity(
                 data=activity_res, user_id=athlete.user_id))
+
         return activities

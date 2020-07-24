@@ -7,6 +7,8 @@ from stravalib.client import Client as StravaClient
 from pprint import pprint
 from config import Config
 from lib.recent_athlete_peak import RecentAthletePeak
+from lib.strava_activity import StravaActivity
+from lib.activity_peak import ActivityPeak
 
 config = Config()
 dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
@@ -165,7 +167,50 @@ def profile(event, context):
 
     return {
         "statusCode": 200,
+        "headers": {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Credentials': True,
+        },
         "body": json.dumps(event["requestContext"]["authorizer"]),
+    }
+
+
+def activity_peaks(event, context):
+    athlete_id = event["requestContext"]["authorizer"]["athleteId"]
+    activity_id = event['pathParameters']['activityId']
+    res = ActivityPeak.get_athlete_from_s3(athlete_id)
+
+    peaks = []
+    for peak_type in res.keys():
+        index = 1
+        for peak in res[peak_type]:
+            if peak['activity_id'] == activity_id:
+                peak['rank'] = index
+                peaks.append(peak)
+            index += 1
+
+    return {
+        "headers": {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Credentials': True,
+        },
+        "statusCode": 200,
+        "body": json.dumps(peaks, default=str),
+    }
+
+
+def activity(event, context):
+    athlete_id = event["requestContext"]["authorizer"]["athleteId"]
+    activity_id = event['pathParameters']['activityId']
+    s3_activity = StravaActivity.getFromS3(athlete_id, activity_id)
+
+    return {
+        "statusCode": 200,
+        "headers": {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Credentials': True,
+        },
+        "body": json.dumps(s3_activity, default=str),
     }
 
 
@@ -185,6 +230,10 @@ def recent_peaks(event, context):
         key=lambda x: int(x['date_timestamp']), reverse=True)
 
     return {
+        "headers": {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Credentials': True,
+        },
         "statusCode": 200,
         "body": json.dumps(formatted_items, default=str),
     }

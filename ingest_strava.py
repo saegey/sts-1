@@ -93,7 +93,6 @@ def calculate_peaks_for_athlete(event, context):
     for athlete in event["Records"]:
         athlete_id = athlete["messageAttributes"]["AthleteId"]["stringValue"]
 
-        print(athlete_id)
         results = ActivityPeak.get_top(athlete_id)
         # pprint(results)
         peaks_filename = "peaks_{athlete_id}.json".format(
@@ -109,7 +108,7 @@ def calculate_peaks_for_athlete(event, context):
 
 
 def process_peaks(event, context):
-    # print(event)
+
     for record in event["Records"]:
         body = json.loads(record['body'])
         for s3_file in body['Records']:

@@ -171,6 +171,24 @@ functions:
           authorizer: auth
           cors: true
 
+  activity:
+    handler: index.activity
+    events:
+      - http:
+          path: /api/activity/{activityId}
+          method: get
+          authorizer: auth
+          cors: true
+
+  activity_peaks:
+    handler: index.activity_peaks
+    events:
+      - http:
+          path: /api/activity/{activityId}/peaks
+          method: get
+          authorizer: auth
+          cors: true
+
   recentPeaks:
     handler: index.recent_peaks
     events:
@@ -557,6 +575,17 @@ resources:
           ReadCapacityUnits: 1
           WriteCapacityUnits: 1
         TableName: ${self:custom.stravaAuthTable}
+
+    GatewayResponse:
+      Type: 'AWS::ApiGateway::GatewayResponse'
+      Properties:
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+        ResponseType: EXPIRED_TOKEN
+        RestApiId:
+          Ref: 'ApiGatewayRestApi'
+        StatusCode: '401'
 
   Outputs:
     UserPoolId:

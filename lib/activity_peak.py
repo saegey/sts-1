@@ -3,11 +3,12 @@ from config import Config
 from boto3.dynamodb.conditions import Key
 from datetime import datetime
 from decimal import Decimal
+import json
 
 config = Config()
 dynamodb = boto3.resource("dynamodb", config.aws_region)
 peaks_table = dynamodb.Table(config.athlete_peaks_table)
-
+s3_client = boto3.client("s3")
 
 class ActivityPeak():
     def __init__(self, dataset):
@@ -34,6 +35,16 @@ class ActivityPeak():
                     "value": Decimal(row["value"]),
                     "last_updated": int(datetime.now().timestamp())
                 })
+
+    @classmethod
+    def get_athlete_from_s3(cls, athlete_id):
+        peaks_filename = "peaks_{athlete_id}.json".format(
+            athlete_id=athlete_id,
+        )
+        s3_response = s3_client.get_object(
+            Key=peaks_filename,
+            Bucket=config.strava_api_s3_bucket)
+        return json.load(s3_response["Body"])
 
     @classmethod
     def get_all(cls, athlete_id, exclusive_start_key=None):
