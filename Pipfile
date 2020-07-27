@@ -1,0 +1,32 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+black = "*"
+cfn-lint = "*"
+flake8 = "*"
+install = "*"
+pip = "*"
+pyflakes = "*"
+pylint = "*"
+pytest = "*"
+pytest-dotenv = "*"
+moto = "*"
+
+[packages]
+aws-xray-sdk = "*"
+boto3 = "*"
+jinja2 = "*"
+python-jose = "*"
+pyyaml = "*"
+ratelimiter = "*"
+requests = "*"
+stravalib = "*"
+
+[requires]
+python_version = "3.8"
+
+[pipenv]
+allow_prereleases = true

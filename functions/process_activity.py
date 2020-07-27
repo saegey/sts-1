@@ -11,7 +11,6 @@ s3_client = boto3.client("s3")
 
 
 def main(event, context):
-    # print(event, context)
     for record in event["Records"]:
         filename = record["s3"]["object"]["key"]
         response = s3_client.get_object(Bucket=S3_BUCKET, Key=filename)
@@ -34,19 +33,3 @@ def main(event, context):
             },
         )
         print(resp)
-
-        # print(
-        #     {
-        #         "athlete_id": athlete_id,
-        #         "activity_id": activity_id,
-        #         "start_date_local": res_body["start_date_local"],
-        #         "name": res_body["name"],
-        #         "distance": res_body["distance"],
-        #         "type": res_body["type"],
-        #         "trainer": res_body["trainer"],
-        #         "elapsed_time": res_body["elapsed_time"],
-        #         "suffer_score": res_body["suffer_score"],
-        #     }
-        # )
-        # athlete id, name, start_date_local, distance,
-        # id, type, trainer, elapsed_time, suffer_score

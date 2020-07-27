@@ -1,9 +1,10 @@
-from lib.recent_athlete_peak import RecentAthletePeak
-import boto3
 import json
-from config import Config
-from pprint import pprint
+
+import boto3
+
+from lib.config import Config
 from lib.activity_peak import ActivityPeak
+from lib.recent_athlete_peak import RecentAthletePeak
 
 config = Config()
 PEAK_DURATIONS = [5, 60, 300, 600, 1200, 3600, 5400]
@@ -27,7 +28,8 @@ def fill_values(time_stream, data_stream):
             data_diff = data_stream[i + 1] - data_stream[i]
             for j in range(1, time_diff):
                 new_data_stream.append(
-                    data_stream[i] + ((data_diff / time_diff) * j))
+                    data_stream[i] + ((data_diff / time_diff) * j)
+                )
     return new_data_stream
 
 
@@ -42,9 +44,9 @@ def calc_peak(num_seconds, data_stream, activity_id):
             break
 
         try:
-            sums.append(sum(data_stream[w: w + num_seconds]))
-        except:
-            print("unable to sum datastream for {}".format(activity_id))
+            sums.append(sum(data_stream[w : w + num_seconds]))
+        except Exception as ex:
+            print("unable to sum datastream for {}".format(activity_id), ex)
             return 0
     peak_total = sorted(sums)[-1]
     return peak_total / num_seconds
@@ -53,17 +55,18 @@ def calc_peak(num_seconds, data_stream, activity_id):
 def main(event, context):
     for record in event["Records"]:
         # print(record)
-        s3_events = json.loads(record['body'])
+        s3_events = json.loads(record["body"])
         if "Records" not in s3_events:
-            print('test event', record['body'])
+            print("test event", record["body"])
             continue
 
-        for s3event in s3_events['Records']:
-            s3_bucket = s3event['s3']['bucket']['name']
-            filename = s3event['s3']['object']['key']
+        for s3event in s3_events["Records"]:
+            s3_bucket = s3event["s3"]["bucket"]["name"]
+            filename = s3event["s3"]["object"]["key"]
 
             activity_filename = "activity_{}".format(
-                "_".join(filename.split("_")[1:]))
+                "_".join(filename.split("_")[1:])
+            )
             response = s3_client.get_object(Bucket=s3_bucket, Key=filename)
             activity_raw_response = s3_client.get_object(
                 Bucket=s3_bucket, Key=activity_filename
@@ -73,10 +76,13 @@ def main(event, context):
 
             athlete_id = int(filename.split("_")[1])
             activity_id = int(filename.split("_")[2].split(".")[0])
-            print('load json file for {athlete_id} and activity: {activity_id}'.format(
-                athlete_id=athlete_id, activity_id=activity_id))
+            print(
+                "json => {athlete_id} and activity: {activity_id}".format(
+                    athlete_id=athlete_id, activity_id=activity_id
+                )
+            )
             if "time" not in res_body:
-                print('time metric not found')
+                print("time metric not found")
                 continue
             time_stream = res_body["time"]
 
@@ -88,22 +94,36 @@ def main(event, context):
                     data_stream = res_body[statistic]
                     normalized_stream = fill_values(time_stream, data_stream)
                     peak_value = calc_peak(
-                        duration, normalized_stream, activity_id)
+                        duration, normalized_stream, activity_id
+                    )
                     if peak_value is None:
                         continue
-                    elapsed_time = activity_res_body["elapsed_time"] if activity_res_body["elapsed_time"] is not None else ""
+                    elapsed_time = (
+                        activity_res_body["elapsed_time"]
+                        if activity_res_body["elapsed_time"] is not None
+                        else ""
+                    )
 
                     item = {
-                        "peak_id": "{activity_id}_{statistic}_{duration}".format(
-                            activity_id=activity_id, statistic=statistic, duration=duration),
+                        "peak_id": "{activity_id}_{statistic}_\
+                            {duration}".format(
+                            activity_id=activity_id,
+                            statistic=statistic,
+                            duration=duration,
+                        ),
                         "peak_type": "{type}_{statistic}_{duration}".format(
-                            type=activity_res_body["type"], statistic=statistic, duration=str(duration)),
+                            type=activity_res_body["type"],
+                            statistic=statistic,
+                            duration=str(duration),
+                        ),
                         "attribute": statistic,
                         "value": str(peak_value),
                         "activity_id": str(activity_id),
                         "athlete_id": str(athlete_id),
                         "duration": str(duration),
-                        "start_date_local": activity_res_body["start_date_local"],
+                        "start_date_local": activity_res_body[
+                            "start_date_local"
+                        ],
                         "name": activity_res_body["name"],
                         "type": activity_res_body["type"],
                         "trainer": str(activity_res_body["trainer"]),
@@ -113,9 +133,11 @@ def main(event, context):
                     if activity_res_body["distance"] is not None:
                         item["distance"] = str(activity_res_body["distance"])
                     if activity_res_body["suffer_score"] is not None:
-                        item["suffer_score"] = str(activity_res_body["suffer_score"])
+                        item["suffer_score"] = str(
+                            activity_res_body["suffer_score"]
+                        )
                     peaks_to_push.append(item)
             # pprint(peaks_to_push)
-            activity_peak = ActivityPeak(peaks_to_push).save()
+            ActivityPeak(peaks_to_push).save()
             RecentAthletePeak.enqueue(athlete_id)
     return True

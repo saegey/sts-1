@@ -4,8 +4,6 @@ provider:
   name: aws
   runtime: python3.8
   stage: ${opt:stage, 'dev'}
-  tracing:
-    lambda: true
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -98,7 +96,7 @@ provider:
     # SQS QUEUE
     SQS_QUEUE_URL: { "Ref": "backfillAthleteQueue" }
     STRAVA_API_QUEUE_URL: { "Ref": "stravaApiQueue" }
-    RECENT_ATHLETE_PEAKS_QUEUE: { "Ref": "recentAthletePeaksQueue"}
+    RECENT_ATHLETE_PEAKS_QUEUE: { "Ref": "recentAthletePeaksQueue" }
 
     BUCKET: { "Ref": "stravaAthleteDataBucket" }
 
@@ -114,9 +112,7 @@ provider:
 functions:
   # APIS
   backfillAthleteEndpoint:
-    handler: index.backfill_athlete
-    # layers:
-    #   - { Ref: PythonRequirementsLambdaLayer }
+    handler: functions/index.backfill_athlete
     events:
       - http:
           path: /api/athlete/backfill
@@ -125,45 +121,16 @@ functions:
           cors: true
 
   stravaAuthorized:
-    handler: index.strava_authorized
-    # layers:
-    #   - { Ref: PythonRequirementsLambdaLayer }
+    handler: functions/index.strava_authorized
     events:
       - http:
-          path: /strava-authorized
+          path: /api/strava
           method: post
           authorizer: auth
           cors: true
 
-  stravaCallback:
-    # layers:
-    #   - { Ref: PythonRequirementsLambdaLayer }
-    handler: index.strava_callback
-    events:
-      - http:
-          path: /strava-callback
-          method: get
-
-  stravaAuth:
-    # layers:
-    #   - { Ref: PythonRequirementsLambdaLayer }
-    handler: index.strava_auth
-    events:
-      - http:
-          path: /strava-auth
-          method: get
-
-  logout:
-    # layers:
-    #   - { Ref: PythonRequirementsLambdaLayer }
-    handler: index.logout
-    events:
-      - http:
-          path: /logout
-          method: get
-
   graph:
-    handler: graph.main
+    handler: functions/graph.main
     events:
       - http:
           path: /api/graph
@@ -172,7 +139,7 @@ functions:
           cors: true
 
   activity:
-    handler: index.activity
+    handler: functions/index.activity
     events:
       - http:
           path: /api/activity/{activityId}
@@ -181,7 +148,7 @@ functions:
           cors: true
 
   activity_peaks:
-    handler: index.activity_peaks
+    handler: functions/index.activity_peaks
     events:
       - http:
           path: /api/activity/{activityId}/peaks
@@ -190,7 +157,7 @@ functions:
           cors: true
 
   recentPeaks:
-    handler: index.recent_peaks
+    handler: functions/index.recent_peaks
     events:
       - http:
           path: /api/athlete/peaks/recent
@@ -198,50 +165,23 @@ functions:
           authorizer: auth
           cors: true
 
-  index:
-    # layers:
-    #   - { Ref: PythonRequirementsLambdaLayer }
-    handler: index.main
-    events:
-      - http:
-          path: /
-          method: get
-
   profile:
-    # layers:
-    #   - { Ref: PythonRequirementsLambdaLayer }
-    handler: index.profile
+    handler: functions/index.profile
     events:
       - http:
-          path: /profile
+          path: /api/profile
           method: get
           authorizer: auth
           cors: true
 
-  athlete:
-    # layers:
-    #   - { Ref: PythonRequirementsLambdaLayer }
-    handler: athlete.main
-    events:
-      - http:
-          path: /athlete/graph
-          method: get
-      - http:
-          path: /athlete/recent-peaks
-          method: get
-
   # Authorization
   auth:
-    # layers:
-    #   - { Ref: PythonRequirementsLambdaLayer }
-    handler: auth.main
+    handler: functions/auth.main
     cors: true
 
   # Background Jobs
   enqueueStravaBackfill:
-    # layers:
-    #   - { Ref: PythonRequirementsLambdaLayer }
-    handler: ingest_strava.enqueue_strava_backfill
+    handler: functions/ingest_strava.enqueue_strava_backfill
     timeout: 300
     events:
       - sqs:
@@ -249,17 +189,14 @@ functions:
     # onError: { "Ref": "snsDeadLetterQueue" }
 
   enqueueStravaAthleteSync:
-    handler: ingest_strava.enqueue_strava_athlete_sync
+    handler: functions/ingest_strava.enqueue_strava_athlete_sync
     timeout: 300
     events:
       - schedule: ${self:custom.${self:custom.stage}.schedule}
   # snsRetryStravaApi:
-  #   # layers:
-  #   #   - { Ref: PythonRequirementsLambdaLayer }
-  #   handler: ingest_strava.
 
   fetchStravaApi:
-    handler: ingest_strava.fetch_strava_api
+    handler: functions/ingest_strava.fetch_strava_api
     reservedConcurrency: 1
     timeout: 300
     events:
@@ -269,7 +206,7 @@ functions:
     # onError: { "Ref": "snsDeadLetterQueue" }
 
   processPeaksToRecent:
-    handler: ingest_strava.process_peaks
+    handler: functions/ingest_strava.process_peaks
     reservedConcurrency: 1
     timeout: 60
     events:
@@ -278,7 +215,7 @@ functions:
           batchSize: 1
 
   calculatePeaksForAthlete:
-    handler: ingest_strava.calculate_peaks_for_athlete
+    handler: functions/ingest_strava.calculate_peaks_for_athlete
     timeout: 60
     events:
       - sqs:
@@ -286,10 +223,8 @@ functions:
           batchSize: 1
 
   processStravaStreamsFromS3:
-    # layers:
-    #   - { Ref: PythonRequirementsLambdaLayer }
     reservedConcurrency: 1
-    handler: process_streams.main
+    handler: functions/process_streams.main
     timeout: 300
     # environment:
     #   BUCKET: { "Fn::GetAtt": ["stravaAthleteDataBucket", "DomainName"] }
@@ -577,15 +512,15 @@ resources:
         TableName: ${self:custom.stravaAuthTable}
 
     GatewayResponse:
-      Type: 'AWS::ApiGateway::GatewayResponse'
+      Type: "AWS::ApiGateway::GatewayResponse"
       Properties:
         ResponseParameters:
           gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
           gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
         ResponseType: EXPIRED_TOKEN
         RestApiId:
-          Ref: 'ApiGatewayRestApi'
-        StatusCode: '401'
+          Ref: "ApiGatewayRestApi"
+        StatusCode: "401"
 
   Outputs:
     UserPoolId:
@@ -633,9 +568,6 @@ custom:
   stravaClientId: m7ci5ov0flhjlc8k4urqdknsp
   cognitoDomainSuffix: strava-peaks
   prod:
-    callbackUrl: https://sts-1.com/
-    cognitoLoginUrl: "https://login.sts-1.com/login"
-    cognitoUrl: "https://login.sts-1.com"
     schedule:
       rate: rate(10 minutes)
   dev:
