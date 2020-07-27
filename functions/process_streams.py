@@ -1,10 +1,12 @@
 import json
+from typing import List
 
 import boto3
 
-from lib.config import Config
 from lib.activity_peak import ActivityPeak
+from lib.config import Config
 from lib.recent_athlete_peak import RecentAthletePeak
+from src.stubs.serverless import LambdaDict
 
 config = Config()
 PEAK_DURATIONS = [5, 60, 300, 600, 1200, 3600, 5400]
@@ -33,7 +35,7 @@ def fill_values(time_stream, data_stream):
     return new_data_stream
 
 
-def calc_peak(num_seconds, data_stream, activity_id):
+def calc_peak(num_seconds: int, data_stream: List[int], activity_id: str):
     if len(data_stream) == 0:
         return 0
     if num_seconds > len(data_stream):
@@ -52,7 +54,7 @@ def calc_peak(num_seconds, data_stream, activity_id):
     return peak_total / num_seconds
 
 
-def main(event, context):
+def main(event: LambdaDict):
     for record in event["Records"]:
         # print(record)
         s3_events = json.loads(record["body"])
@@ -93,7 +95,7 @@ def main(event, context):
                         continue
                     data_stream = res_body[statistic]
                     normalized_stream = fill_values(time_stream, data_stream)
-                    peak_value = calc_peak(
+                    peak_value: float = calc_peak(
                         duration, normalized_stream, activity_id
                     )
                     if peak_value is None:
@@ -137,7 +139,7 @@ def main(event, context):
                             activity_res_body["suffer_score"]
                         )
                     peaks_to_push.append(item)
-            # pprint(peaks_to_push)
+
             ActivityPeak(peaks_to_push).save()
             RecentAthletePeak.enqueue(athlete_id)
     return True

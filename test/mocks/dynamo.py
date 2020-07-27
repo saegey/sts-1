@@ -22,7 +22,7 @@ def strava_auth_table():
 
 
 @mock_dynamodb2
-def peaks_table():
+def peaks_table() -> None:
     dynamodb = boto3.resource("dynamodb", config.aws_region)
     return dynamodb.create_table(
         TableName=config.athlete_peaks_table,

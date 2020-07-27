@@ -27,7 +27,7 @@ def test_empty_athlete_graph():
 def test_valid_athlete_graph():
     event = {
         "requestContext": {
-            "authorizer": {"athleteId": "1234", "principalId": "420"}
+            "authorizer": {"athleteId": "1234", "prb incipalId": "420"}
         },
         "queryStringParameters": {
             "type": "Ride",
