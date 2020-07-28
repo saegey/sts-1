@@ -1,34 +1,47 @@
-import boto3
-from config import Config
-from datetime import datetime, timedelta
-import requests
 import json
+from datetime import datetime
+
+import boto3
+import requests
+
+from lib.config import Config
 
 config = Config()
 dynamodb = boto3.resource("dynamodb", config.aws_region)
 strava_auth_table = dynamodb.Table(config.strava_auth_table)
 
 
-class StravaAthlete():
-    def __init__(self, user_id, refresh_token=None, access_token=None, athlete_id=None, expires_at=None, last_sync_at=None):
+class StravaAthlete:
+    def __init__(
+        self,
+        user_id: str,
+        refresh_token: str = None,
+        access_token: str = None,
+        athlete_id=None,
+        expires_at: int = None,
+        last_sync_at: int = None,
+    ):
         self.user_id = user_id
         self.refresh_token = refresh_token
         self.access_token = access_token
         self.athlete_id = athlete_id
         self.expires_at = expires_at
         self.last_sync_at = last_sync_at
-        if self.access_token is None or self.expires_at < datetime.now().timestamp():
+        if (
+            self.access_token is None
+            or self.expires_at < datetime.now().timestamp()
+        ):
             self.get_access_token()
 
     def save(self):
         response = strava_auth_table.put_item(
             Item={
-                'user_id': self.user_id,
-                'refresh_token': self.refresh_token,
-                'access_token': self.access_token,
-                'athlete_id': self.athlete_id,
-                'expires_at': self.expires_at,
-                'last_sync_at': int(self.last_sync_at)
+                "user_id": self.user_id,
+                "refresh_token": self.refresh_token,
+                "access_token": self.access_token,
+                "athlete_id": self.athlete_id,
+                "expires_at": self.expires_at,
+                "last_sync_at": self.last_sync_at,
             }
         )
         print(response)
@@ -46,8 +59,8 @@ class StravaAthlete():
         if "last_sync_at" in res["Item"]:
             self.last_sync_at = res["Item"]["last_sync_at"]
 
-        if (datetime.now().timestamp() < self.expires_at):
-            print('access token still valid', self.access_token)
+        if datetime.now().timestamp() < self.expires_at:
+            print("access token still valid", self.access_token)
             return self.access_token
 
         print(self.access_token)
@@ -69,8 +82,11 @@ class StravaAthlete():
     def fetch_new_token(self):
         strava_res = self.refresh_token_strava()
         print("new token returned: {token}".format(token=str(strava_res)))
-        print("updating token for {athlete_id}".format(
-            athlete_id=self.athlete_id))
+        print(
+            "updating token for {athlete_id}".format(
+                athlete_id=self.athlete_id
+            )
+        )
 
         token_update_res = strava_auth_table.put_item(
             Item={
@@ -92,17 +108,24 @@ class StravaAthlete():
     def get_all(cls):
         results = []
         response = strava_auth_table.scan()
-        for strava_creds in response['Items']:
-            if 'access_token' not in strava_creds or strava_creds['access_token'] is None:
+        for strava_creds in response["Items"]:
+            if (
+                "access_token" not in strava_creds
+                or strava_creds["access_token"] is None
+            ):
                 continue
-            last_sync_at = strava_creds['last_sync_at'] if 'last_sync_at' in strava_creds else 1436029687
+            last_sync_at = (
+                strava_creds["last_sync_at"]
+                if "last_sync_at" in strava_creds
+                else 1436029687
+            )
 
             athlete = StravaAthlete(
-                access_token=strava_creds['access_token'],
-                user_id=strava_creds['user_id'],
-                refresh_token=strava_creds['refresh_token'],
-                expires_at=strava_creds['expires_at'],
-                athlete_id=strava_creds['athlete_id'],
+                access_token=strava_creds["access_token"],
+                user_id=strava_creds["user_id"],
+                refresh_token=strava_creds["refresh_token"],
+                expires_at=strava_creds["expires_at"],
+                athlete_id=strava_creds["athlete_id"],
                 last_sync_at=last_sync_at,
             )
             results.append(athlete)

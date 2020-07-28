@@ -1,0 +1,15 @@
+{
+  "include": ["functions", "lib"],
+
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "src/experimental",
+    "src/typestubs"
+  ],
+
+  "stubPath": "src/stubs",
+
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": true
+}

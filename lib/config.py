@@ -1,17 +1,22 @@
-import os
 import json
+import os
+
 import boto3
 
 
-class Config():
+class Config:
     def __init__(self):
         self.ssm_client = boto3.client("ssm", region_name="us-east-1")
         self.strava_auth_table = os.environ["STRAVA_AUTH_TABLE"]
-        self.recent_athlete_peaks_table = os.environ["RECENT_ATHLETE_PEAKS_TABLE"]
+        self.recent_athlete_peaks_table = os.environ[
+            "RECENT_ATHLETE_PEAKS_TABLE"
+        ]
 
         self.strava_api_queue_url = os.environ["STRAVA_API_QUEUE_URL"]
         self.backfill_athlete_queue = os.environ["SQS_QUEUE_URL"]
-        self.recent_athlete_peaks_to_s3 = os.environ["RECENT_ATHLETE_PEAKS_QUEUE"]
+        self.recent_athlete_peaks_to_s3 = os.environ[
+            "RECENT_ATHLETE_PEAKS_QUEUE"
+        ]
 
         self.athlete_peaks_table = os.environ["PEAKS_TABLE"]
         self.strava_api_uri = "https://www.strava.com/api/v3"
@@ -28,8 +33,7 @@ class Config():
         self.aws_region = "us-east-1"
 
     def get_secret(self, key):
-        resp = self.ssm_client.get_parameter(
-            Name=key, WithDecryption=True)
+        resp = self.ssm_client.get_parameter(Name=key, WithDecryption=True)
         return resp["Parameter"]["Value"]
 
     def __str__(self):

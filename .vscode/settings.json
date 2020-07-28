@@ -8,10 +8,7 @@
       "command": "serverless print",
       "timeOffsetInMs": 0,
       "envVars": [],
-      "stages": [
-        "dev",
-        "prod"
-      ]
+      "stages": ["dev", "prod"]
     },
     {
       "type": "dynamodb",
@@ -23,5 +20,30 @@
   ],
   "maven.view": "hierarchical",
   "serverlessConsole.autoRefreshInterval": 0,
-  "serverlessConsole.groupPerRequest": true
+  "serverlessConsole.groupPerRequest": true,
+  "python.pythonPath": "/Users/saegey/.local/share/virtualenvs/strava-activities-ingest-zuCiFQwo/bin/python",
+  "search.exclude": {
+    "**/__pycache__": true
+  },
+  "files.exclude": {
+    ".requirements.zip": true,
+    ".serverless": true,
+    "**/__pycache__": true,
+    "node_modules/": true
+  },
+  "python.formatting.provider": "black",
+  "python.formatting.blackArgs": ["--line-length", "79"],
+  "python.sortImports.args": ["-rc", "--atomic"],
+  "python.linting.enabled": true,
+  "python.linting.flake8Enabled": true,
+  "python.linting.flake8Args": [
+    "--ignore=E203,W503"
+  ],
+  "python.testing.pytestArgs": [
+    "test"
+  ],
+  "python.testing.unittestEnabled": false,
+  "python.testing.nosetestsEnabled": false,
+  "python.testing.pytestEnabled": true,
+  "python.analysis.typeCheckingMode": "strict"
 }
